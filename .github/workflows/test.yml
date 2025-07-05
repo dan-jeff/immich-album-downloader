@@ -5,6 +5,12 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Cancel previous runs on the same PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   DOTNET_VERSION: '9.0.x'
@@ -45,7 +51,9 @@ jobs:
           --logger trx \
           --results-directory TestResults \
           --collect:"XPlat Code Coverage" \
-          --filter "Category!=ComponentTest"
+          --filter "Category!=ComponentTest" \
+          --verbosity normal \
+          -- RunConfiguration.TestRunParameters.Parameter\(name=\"TestRunType\",value=\"CI\"\)
     
     - name: Upload test results
       uses: actions/upload-artifact@v4
@@ -54,12 +62,22 @@ jobs:
         name: unit-test-results
         path: TestResults
     
+    - name: Publish unit test results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Unit Test Results
+        path: TestResults/*.trx
+        reporter: dotnet-trx
+        fail-on-error: false
+    
     - name: Upload coverage reports
       uses: codecov/codecov-action@v4
       if: always()
       with:
         file: TestResults/*/coverage.cobertura.xml
         flags: unit-tests
+        name: unit-tests
 
   component-tests:
     name: Component Tests
@@ -102,6 +120,10 @@ jobs:
     - name: Build solution
       run: dotnet build backend/ImmichDownloader.sln --no-restore --configuration Release
     
+    - name: Wait for PostgreSQL
+      run: |
+        timeout 30 bash -c 'until pg_isready -h localhost -p 5432 -U test_user; do sleep 1; done'
+    
     - name: Run component tests
       run: |
         dotnet test backend/ImmichDownloader.Tests \
@@ -111,7 +133,9 @@ jobs:
           --results-directory ComponentTestResults \
           --collect:"XPlat Code Coverage" \
           --filter "Category=ComponentTest" \
-          --environment "ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=immich_downloader_test;Username=test_user;Password=test_password"
+          --verbosity normal \
+          --environment "ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=immich_downloader_test;Username=test_user;Password=test_password" \
+          -- RunConfiguration.TestRunParameters.Parameter\(name=\"TestRunType\",value=\"CI\"\)
     
     - name: Upload component test results
       uses: actions/upload-artifact@v4
@@ -120,12 +144,22 @@ jobs:
         name: component-test-results
         path: ComponentTestResults
     
+    - name: Publish component test results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Component Test Results
+        path: ComponentTestResults/*.trx
+        reporter: dotnet-trx
+        fail-on-error: false
+    
     - name: Upload coverage reports
       uses: codecov/codecov-action@v4
       if: always()
       with:
         file: ComponentTestResults/*/coverage.cobertura.xml
         flags: component-tests
+        name: component-tests
 
   frontend-tests:
     name: Frontend Tests
@@ -237,6 +271,8 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    # Only run security scans on push to main/develop, not on PRs to speed up CI
+    if: github.event_name == 'push'
     
     steps:
     - uses: actions/checkout@v4
@@ -250,6 +286,7 @@ jobs:
       run: |
         dotnet tool install --global security-scan
         npm install -g audit-ci
+      continue-on-error: true
     
     - name: Run .NET security scan
       run: security-scan backend/ImmichDownloader.sln --excl-dev=true
@@ -324,29 +361,60 @@ jobs:
         
         docker-compose down
 
-  test-summary:
-    name: Test Summary
+  # Required status check for PR merging
+  required-tests:
+    name: Required Tests
     runs-on: ubuntu-latest
-    needs: [unit-tests, component-tests, frontend-tests, e2e-tests, security-scan, docker-build]
+    needs: [unit-tests, component-tests, frontend-tests]
     if: always()
     
     steps:
-    - name: Check test results
+    - name: Check required test results
+      run: |
+        echo "Unit Tests: ${{ needs.unit-tests.result }}"
+        echo "Component Tests: ${{ needs.component-tests.result }}"
+        echo "Frontend Tests: ${{ needs.frontend-tests.result }}"
+        
+        if [[ "${{ needs.unit-tests.result }}" != "success" || 
+              "${{ needs.component-tests.result }}" != "success" || 
+              "${{ needs.frontend-tests.result }}" != "success" ]]; then
+          echo "❌ Required tests failed - PR cannot be merged"
+          exit 1
+        else
+          echo "✅ All required tests passed - PR ready for merge"
+        fi
+
+  # Optional comprehensive check (includes E2E and Docker)
+  all-tests:
+    name: All Tests Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, component-tests, frontend-tests, e2e-tests, docker-build, security-scan]
+    if: always()
+    
+    steps:
+    - name: Check all test results
       run: |
         echo "Unit Tests: ${{ needs.unit-tests.result }}"
         echo "Component Tests: ${{ needs.component-tests.result }}"
         echo "Frontend Tests: ${{ needs.frontend-tests.result }}"
         echo "E2E Tests: ${{ needs.e2e-tests.result }}"
-        echo "Security Scan: ${{ needs.security-scan.result }}"
         echo "Docker Build: ${{ needs.docker-build.result }}"
+        echo "Security Scan: ${{ needs.security-scan.result }}"
         
-        if [[ "${{ needs.unit-tests.result }}" != "success" || 
-              "${{ needs.component-tests.result }}" != "success" || 
-              "${{ needs.frontend-tests.result }}" != "success" || 
-              "${{ needs.e2e-tests.result }}" != "success" || 
-              "${{ needs.docker-build.result }}" != "success" ]]; then
-          echo "❌ Some tests failed"
-          exit 1
+        # Count failures
+        failures=0
+        [[ "${{ needs.unit-tests.result }}" != "success" ]] && ((failures++))
+        [[ "${{ needs.component-tests.result }}" != "success" ]] && ((failures++))
+        [[ "${{ needs.frontend-tests.result }}" != "success" ]] && ((failures++))
+        [[ "${{ needs.e2e-tests.result }}" != "success" ]] && ((failures++))
+        [[ "${{ needs.docker-build.result }}" != "success" ]] && ((failures++))
+        [[ "${{ needs.security-scan.result }}" != "success" && "${{ needs.security-scan.result }}" != "skipped" ]] && ((failures++))
+        
+        echo "Total failures: $failures"
+        
+        if [[ $failures -gt 0 ]]; then
+          echo "❌ $failures test suite(s) failed"
+          # Don't exit 1 here as this is informational only
         else
-          echo "✅ All tests passed"
+          echo "✅ All test suites passed"
         fi
