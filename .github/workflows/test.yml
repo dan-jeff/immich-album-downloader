@@ -1,0 +1,352 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  NODE_VERSION: '18'
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+    
+    - name: Restore dependencies
+      run: dotnet restore backend/ImmichDownloader.sln
+    
+    - name: Build solution
+      run: dotnet build backend/ImmichDownloader.sln --no-restore --configuration Release
+    
+    - name: Run unit tests
+      run: |
+        dotnet test backend/ImmichDownloader.Tests \
+          --no-build \
+          --configuration Release \
+          --logger trx \
+          --results-directory TestResults \
+          --collect:"XPlat Code Coverage" \
+          --filter "Category!=ComponentTest"
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: unit-test-results
+        path: TestResults
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      if: always()
+      with:
+        file: TestResults/*/coverage.cobertura.xml
+        flags: unit-tests
+
+  component-tests:
+    name: Component Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: immich_downloader_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+    
+    - name: Restore dependencies
+      run: dotnet restore backend/ImmichDownloader.sln
+    
+    - name: Build solution
+      run: dotnet build backend/ImmichDownloader.sln --no-restore --configuration Release
+    
+    - name: Run component tests
+      run: |
+        dotnet test backend/ImmichDownloader.Tests \
+          --no-build \
+          --configuration Release \
+          --logger trx \
+          --results-directory ComponentTestResults \
+          --collect:"XPlat Code Coverage" \
+          --filter "Category=ComponentTest" \
+          --environment "ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=immich_downloader_test;Username=test_user;Password=test_password"
+    
+    - name: Upload component test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: component-test-results
+        path: ComponentTestResults
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      if: always()
+      with:
+        file: ComponentTestResults/*/coverage.cobertura.xml
+        flags: component-tests
+
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: npm ci
+      working-directory: frontend
+    
+    - name: Run tests
+      run: npm test -- --coverage --watchAll=false
+      working-directory: frontend
+    
+    - name: Upload frontend test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: frontend-test-results
+        path: frontend/coverage
+
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: immich_downloader_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install frontend dependencies
+      run: npm ci
+      working-directory: frontend
+    
+    - name: Build frontend
+      run: npm run build
+      working-directory: frontend
+    
+    - name: Restore backend dependencies
+      run: dotnet restore backend/ImmichDownloader.sln
+    
+    - name: Build backend
+      run: dotnet build backend/ImmichDownloader.sln --no-restore --configuration Release
+    
+    - name: Start application with Docker Compose
+      run: |
+        # Override with test database
+        export CONNECTION_STRING="Host=localhost;Port=5432;Database=immich_downloader_test;Username=test_user;Password=test_password"
+        docker-compose up -d --build
+        
+        # Wait for application to be ready
+        timeout 60 bash -c 'until curl -f http://localhost:8080/api/auth/check-setup; do sleep 2; done'
+    
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium
+      working-directory: frontend
+    
+    - name: Run E2E tests
+      run: npx playwright test
+      working-directory: frontend
+    
+    - name: Upload E2E test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: e2e-test-results
+        path: |
+          frontend/test-results/
+          frontend/playwright-report/
+    
+    - name: Stop application
+      if: always()
+      run: docker-compose down
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Install security scanning tools
+      run: |
+        dotnet tool install --global security-scan
+        npm install -g audit-ci
+    
+    - name: Run .NET security scan
+      run: security-scan backend/ImmichDownloader.sln --excl-dev=true
+      continue-on-error: true
+    
+    - name: Run npm audit
+      run: |
+        cd frontend
+        npm audit --audit-level moderate
+      continue-on-error: true
+    
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/init@v3
+      with:
+        languages: 'csharp,javascript'
+    
+    - name: Restore and build for CodeQL
+      run: |
+        dotnet restore backend/ImmichDownloader.sln
+        dotnet build backend/ImmichDownloader.sln --no-restore
+    
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        file: ./backend/ImmichDownloader.Web/Dockerfile
+        push: false
+        tags: immich-downloader-backend:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        file: ./frontend/Dockerfile
+        push: false
+        tags: immich-downloader-frontend:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Test Docker Compose
+      run: |
+        # Test that the compose file is valid
+        docker-compose config
+        
+        # Test that images can be built
+        docker-compose build --no-cache
+    
+    - name: Run container smoke test
+      run: |
+        docker-compose up -d
+        
+        # Wait for services to be ready
+        timeout 60 bash -c 'until curl -f http://localhost:8080/api/auth/check-setup; do sleep 2; done'
+        
+        # Basic health check
+        curl -f http://localhost:8080/api/auth/check-setup
+        
+        docker-compose down
+
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, component-tests, frontend-tests, e2e-tests, security-scan, docker-build]
+    if: always()
+    
+    steps:
+    - name: Check test results
+      run: |
+        echo "Unit Tests: ${{ needs.unit-tests.result }}"
+        echo "Component Tests: ${{ needs.component-tests.result }}"
+        echo "Frontend Tests: ${{ needs.frontend-tests.result }}"
+        echo "E2E Tests: ${{ needs.e2e-tests.result }}"
+        echo "Security Scan: ${{ needs.security-scan.result }}"
+        echo "Docker Build: ${{ needs.docker-build.result }}"
+        
+        if [[ "${{ needs.unit-tests.result }}" != "success" || 
+              "${{ needs.component-tests.result }}" != "success" || 
+              "${{ needs.frontend-tests.result }}" != "success" || 
+              "${{ needs.e2e-tests.result }}" != "success" || 
+              "${{ needs.docker-build.result }}" != "success" ]]; then
+          echo "❌ Some tests failed"
+          exit 1
+        else
+          echo "✅ All tests passed"
+        fi

@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImmichDownloader.Web", "Imm
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Immich.Data", "Immich.Data\Immich.Data.csproj", "{C29E81FD-E69A-46C0-8059-1999F3193C3D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImmichDownloader.Tests", "ImmichDownloader.Tests\ImmichDownloader.Tests.csproj", "{6D6D5AEC-47A5-4BF9-AEF2-2CA8160BC404}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{C29E81FD-E69A-46C0-8059-1999F3193C3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C29E81FD-E69A-46C0-8059-1999F3193C3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C29E81FD-E69A-46C0-8059-1999F3193C3D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D6D5AEC-47A5-4BF9-AEF2-2CA8160BC404}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D6D5AEC-47A5-4BF9-AEF2-2CA8160BC404}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D6D5AEC-47A5-4BF9-AEF2-2CA8160BC404}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D6D5AEC-47A5-4BF9-AEF2-2CA8160BC404}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
