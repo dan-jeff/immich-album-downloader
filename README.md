@@ -80,8 +80,8 @@ Immich Downloader is a powerful web application that allows you to efficiently d
 *Browse Immich albums with real data showing asset counts and download controls*
 
 ### Active Tasks & Real-time Progress
-![Active Tasks](docs/screenshots/active-tasks-with-data.png)
-*Real-time task monitoring with error handling and detailed task history*
+![Active Tasks](docs/screenshots/active-tasks.png)
+*Real-time task monitoring with clean interface for tracking download progress*
 
 ### Image Resizer Interface
 ![Resizer](docs/screenshots/resizer.png)
@@ -120,21 +120,12 @@ git clone https://github.com/your-username/immich-downloader.git
 cd immich-downloader
 ```
 
-### 2. Configure Environment
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit configuration
-nano .env
-```
-
-### 3. Start Services
+### 2. Start Services
 ```bash
 docker-compose up -d
 ```
 
-### 4. Access Application
+### 3. Access Application
 Open your browser to `http://localhost:8080`
 
 ## 📦 Installation
@@ -154,8 +145,6 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - JWT_SECRET_KEY=your-256-bit-secret-key-here
-      - IMMICH_URL=https://your-immich-server.com
-      - IMMICH_API_KEY=your-immich-api-key
       - CONNECTION_STRING=Data Source=/app/data/immich_downloader.db
       - ALLOWED_ORIGINS=http://localhost:8080
     volumes:
@@ -214,11 +203,11 @@ npm start
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
 | `JWT_SECRET_KEY` | 256-bit secret key for JWT tokens | ✅ | - |
-| `IMMICH_URL` | Immich server URL | ✅ | - |
-| `IMMICH_API_KEY` | Immich API key | ✅ | - |
 | `CONNECTION_STRING` | Database connection string | ❌ | SQLite default |
 | `ALLOWED_ORIGINS` | CORS allowed origins (comma-separated) | ❌ | localhost |
 | `DATA_PATH` | Data storage directory | ❌ | `data` |
+
+**Note**: Immich server settings (URL and API key) are configured through the web interface, not environment variables.
 
 ### Security Best Practices
 
@@ -227,12 +216,10 @@ npm start
    openssl rand -base64 32
    ```
 
-2. **Use environment variables for secrets**:
-   ```bash
-   # .env (add to .gitignore)
-   JWT_SECRET_KEY=your-generated-secret-key
-   IMMICH_API_KEY=your-immich-api-key
-   ```
+2. **Configure Immich settings via the web interface**:
+   - Navigate to Configuration page after startup
+   - Enter your Immich server URL and API key
+   - Test the connection before saving
 
 3. **Configure proper CORS origins**:
    ```
