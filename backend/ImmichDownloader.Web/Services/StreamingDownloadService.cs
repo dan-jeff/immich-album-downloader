@@ -92,6 +92,17 @@ public class StreamingDownloadService : IStreamingDownloadService
             _logger.LogInformation("Starting streaming download for album {AlbumId}, task {TaskId}", albumId, taskId);
             await _progressService.NotifyProgressAsync(taskId, TaskType.Download, Models.TaskStatus.InProgress);
 
+            // Configure Immich service with database settings
+            var (immichUrl, apiKey) = await GetImmichSettingsAsync();
+            if (string.IsNullOrEmpty(immichUrl) || string.IsNullOrEmpty(apiKey))
+            {
+                _logger.LogError("Immich configuration not found in database");
+                await UpdateTaskAsync(taskId, Models.TaskStatus.Error, "Immich service not configured");
+                return;
+            }
+
+            _immichService.Configure(immichUrl, apiKey);
+
             // Get album info
             var (success, albumInfo, error) = await _immichService.GetAlbumInfoAsync(albumId);
             if (!success || albumInfo == null)
@@ -396,5 +407,24 @@ public class StreamingDownloadService : IStreamingDownloadService
         }
         
         return Task.CompletedTask;
+    }
+
+    private async Task<(string?, string?)> GetImmichSettingsAsync()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            
+            var urlSetting = await context.AppSettings.FirstOrDefaultAsync(s => s.Key == "Immich:Url");
+            var apiKeySetting = await context.AppSettings.FirstOrDefaultAsync(s => s.Key == "Immich:ApiKey");
+            
+            return (urlSetting?.Value, apiKeySetting?.Value);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving Immich settings from database");
+            return (null, null);
+        }
     }
 }

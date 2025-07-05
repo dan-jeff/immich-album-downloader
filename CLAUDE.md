@@ -146,3 +146,6 @@ Configuration is managed through Docker Compose environment variables in `docker
 - Use secure JWT secret keys (generate with `openssl rand -base64 32`)
 - Configure proper CORS origins
 - Set up volume mounts for persistent data and downloads
+
+## Development Workflow Notes
+- Use docker to run the api and ui

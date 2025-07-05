@@ -19,9 +19,10 @@ body {
   transition: margin-left 0.3s ease;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .content-with-nav {
     margin-left: 0;
+    padding-top: 60px; /* Add space for mobile header */
   }
 }
 
@@ -31,9 +32,9 @@ body {
   margin: 0 auto;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .page-container {
-    padding-top: 5rem; /* Add space for burger menu */
+    padding-top: 2rem; /* Reduced padding since mobile header is now properly spaced */
   }
 }
 

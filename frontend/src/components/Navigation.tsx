@@ -26,9 +26,14 @@ const Navigation: React.FC<NavigationProps> = ({ onLogout }) => {
 
   return (
     <>
-      <button className="nav-toggle d-md-none" onClick={toggleNav}>
-        <span className="navbar-toggler-icon"></span>
-      </button>
+      {/* Mobile header with burger menu and title */}
+      <div className="mobile-header d-md-none">
+        <button className="nav-toggle" onClick={toggleNav}>
+          <span className="navbar-toggler-icon"></span>
+        </button>
+        <h3 className="mobile-title">Immich Downloader</h3>
+      </div>
+      
       <nav className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-header">
           <h3>Immich Downloader</h3>

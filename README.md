@@ -53,57 +53,21 @@ Immich Downloader is a powerful web application that allows you to efficiently d
 - **Environment Configuration**: Secure secret management
 - **CORS Protection**: Configurable cross-origin policies
 
-## 🖼️ Screenshots
+## 🖼️ Interface Preview
 
-### Dashboard Overview
+### Main Dashboard
 ![Dashboard](docs/screenshots/dashboard-with-data.png)
-*Clean, modern interface showing album overview and recent activity with real Immich data*
+*Clean, modern interface showing album overview and recent activity*
 
-### Initial Setup Process
-![Setup](docs/screenshots/setup.png)
-*Simple account creation and server configuration process*
-
-### Configuration Management
+### Configuration Setup
 ![Configuration](docs/screenshots/configuration.png)
-*Easy Immich server setup with connection testing*
+*Simple Immich server connection setup with built-in testing*
 
-### Resize Profile Management
-![Profiles](docs/screenshots/profiles.png)
-*Configure custom image processing profiles with orientation filtering*
-
-### Profile Creation Dialog
-![Profile Creation](docs/screenshots/profile-creation.png)
-*Intuitive profile creation with orientation filters and dimension controls*
-
-### Album Browser with Real Data
+### Album Management
 ![Albums](docs/screenshots/albums-with-data.png)
-*Browse Immich albums with real data showing asset counts and download controls*
+*Browse and download albums with real-time progress tracking*
 
-### Active Tasks & Real-time Progress
-![Active Tasks](docs/screenshots/active-tasks.png)
-*Real-time task monitoring with clean interface for tracking download progress*
-
-### Image Resizer Interface
-![Resizer](docs/screenshots/resizer.png)
-*Batch image processing with profile selection and album management*
-
-### Resize Profile Creation
-![Profile Creation Demo](docs/screenshots/resize-profile-creation-demo.png)
-*Create custom resize profiles with orientation filtering and dimension controls*
-
-### Resize Workflow Setup
-![Resize Workflow](docs/screenshots/resize-workflow-with-profile.png)
-*Select albums and profiles for batch resizing with detailed profile information*
-
-### Updated Profile Management
-![Updated Profiles](docs/screenshots/resize-profiles-updated.png)
-*Manage multiple resize profiles with different dimensions and orientation filters*
-
-### Download Management
-![Downloads](docs/screenshots/downloads.png)
-*Track and download processed album archives*
-
-### Mobile-Responsive Interface
+### Mobile Experience
 ![Mobile Dashboard](docs/screenshots/mobile-dashboard.png)
 *Fully responsive design optimized for mobile devices*
 
@@ -116,7 +80,7 @@ Immich Downloader is a powerful web application that allows you to efficiently d
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-username/immich-downloader.git
+git clone https://github.com/dan-jeff/immich-album-downloader.git
 cd immich-downloader
 ```
 
@@ -130,155 +94,43 @@ Open your browser to `http://localhost:8080`
 
 ## 📦 Installation
 
-### Docker Compose (Recommended)
+The application includes a pre-configured Docker Compose setup for easy deployment.
 
-Create a `docker-compose.yml` file:
+### Using the Included Setup
 
-```yaml
-version: '3.8'
+The repository includes everything needed to run the application:
 
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: ImmichDownloader.Web/Dockerfile
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - JWT_SECRET_KEY=your-256-bit-secret-key-here
-      - CONNECTION_STRING=Data Source=/app/data/immich_downloader.db
-      - ALLOWED_ORIGINS=http://localhost:8080
-    volumes:
-      - ./data:/app/data
-      - ./downloads:/app/downloads
-      - ./resized:/app/resized
-    ports:
-      - "5000:8080"
-
-  frontend:
-    build: ./frontend
-    environment:
-      - REACT_APP_API_URL=http://localhost:5000
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "8080:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-    depends_on:
-      - frontend
-      - backend
-```
-
-Then start the services:
 ```bash
+# Clone and start
+git clone https://github.com/dan-jeff/immich-album-downloader.git
+cd immich-downloader
 docker-compose up -d
+
+# Access at http://localhost:8080
 ```
 
-### Manual Installation
+### Custom Installation
 
-#### Backend (.NET 9)
-```bash
-cd backend
-dotnet restore
-dotnet ef database update --project ImmichDownloader.Web
-dotnet run --project ImmichDownloader.Web
-```
-
-#### Frontend (React)
-```bash
-cd frontend
-npm install
-npm start
-```
+For advanced users who want to customize the deployment, see the [Technical Architecture](#technical-architecture) section for detailed setup instructions.
 
 ## ⚙️ Configuration
 
-### Environment Variables
+### Initial Setup
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `JWT_SECRET_KEY` | 256-bit secret key for JWT tokens | ✅ | - |
-| `CONNECTION_STRING` | Database connection string | ❌ | SQLite default |
-| `ALLOWED_ORIGINS` | CORS allowed origins (comma-separated) | ❌ | localhost |
-| `DATA_PATH` | Data storage directory | ❌ | `data` |
+1. **Start the application** using Docker Compose
+2. **Create your account** on the setup page
+3. **Configure Immich connection**:
+   - Go to Configuration page
+   - Enter your Immich server URL (e.g., `https://immich.example.com`)
+   - Enter your Immich API key (found in Immich → Account Settings → API Keys)
+   - Click "Test Connection" to verify
+   - Save the configuration
 
-**Note**: Immich server settings (URL and API key) are configured through the web interface, not environment variables.
+### Security Notes
 
-### Security Best Practices
-
-1. **Generate a secure JWT secret key**:
-   ```bash
-   openssl rand -base64 32
-   ```
-
-2. **Configure Immich settings via the web interface**:
-   - Navigate to Configuration page after startup
-   - Enter your Immich server URL and API key
-   - Test the connection before saving
-
-3. **Configure proper CORS origins**:
-   ```
-   ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-   ```
-
-## 🏗️ Architecture
-
-### System Overview
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   React Frontend│    │   .NET Backend   │    │  Immich Server  │
-│   (TypeScript)  │◄──►│   (ASP.NET Core) │◄──►│   (External)    │
-│                 │    │                  │    │                 │
-│ • UI Components │    │ • REST API       │    │ • Photo Storage │
-│ • SignalR Client│    │ • SignalR Hub    │    │ • Album API     │
-│ • State Mgmt    │    │ • Background Jobs│    │ • Asset API     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                       │
-         │              ┌─────────────────┐
-         └──────────────►│   File System   │
-                         │                 │
-                         │ • Download Cache│
-                         │ • Resized Images│
-                         │ • SQLite DB     │
-                         └─────────────────┘
-```
-
-### Technology Stack
-
-#### Backend (.NET 9)
-- **ASP.NET Core**: Web API framework
-- **Entity Framework Core**: ORM for database operations
-- **SignalR**: Real-time communication
-- **ImageSharp**: Image processing with HEIC support
-- **SQLite**: Database engine
-- **JWT Bearer**: Authentication
-
-#### Frontend (React 18)
-- **TypeScript**: Type-safe JavaScript
-- **Bootstrap**: UI framework for responsive design
-- **SignalR Client**: Real-time updates
-- **Axios**: HTTP client for API communication
-
-#### Key Components
-
-**Backend Services:**
-- `StreamingDownloadService`: Memory-efficient download processing
-- `StreamingResizeService`: Image processing with streaming I/O
-- `ImageProcessingService`: EXIF handling and format conversion
-- `TaskProgressService`: Real-time progress notifications
-- `AuthService`: JWT authentication and user management
-- `ImmichService`: External API communication
-
-**Frontend Components:**
-- `Albums`: Album browsing with sync indicators
-- `ActiveTasks`: Real-time progress monitoring
-- `ProfileManagement`: Resize profile configuration
-- `AvailableDownloads`: Completed download management
+- **Immich settings are stored securely** in the application database
+- **Generate a strong JWT secret** for production deployments
+- **All configuration is done through the web interface** - no manual file editing required
 
 ## 🔧 Development
 
@@ -411,13 +263,140 @@ Get all background tasks with progress.
 ]
 ```
 
+## 🏗️ Technical Architecture
+
+### System Overview
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   React Frontend│    │   .NET Backend   │    │  Immich Server  │
+│   (TypeScript)  │◄──►│   (ASP.NET Core) │◄──►│   (External)    │
+│                 │    │                  │    │                 │
+│ • UI Components │    │ • REST API       │    │ • Photo Storage │
+│ • SignalR Client│    │ • SignalR Hub    │    │ • Album API     │
+│ • State Mgmt    │    │ • Background Jobs│    │ • Asset API     │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                       │
+         │              ┌─────────────────┐
+         └──────────────►│   File System   │
+                         │                 │
+                         │ • Download Cache│
+                         │ • Resized Images│
+                         │ • SQLite DB     │
+                         └─────────────────┘
+```
+
+### Technology Stack
+
+#### Backend (.NET 9)
+- **ASP.NET Core**: Web API framework
+- **Entity Framework Core**: ORM for database operations
+- **SignalR**: Real-time communication
+- **ImageSharp**: Image processing with HEIC support
+- **SQLite**: Database engine
+- **JWT Bearer**: Authentication
+
+#### Frontend (React 18)
+- **TypeScript**: Type-safe JavaScript
+- **Bootstrap**: UI framework for responsive design
+- **SignalR Client**: Real-time updates
+- **Axios**: HTTP client for API communication
+
+### Key Components
+
+**Backend Services:**
+- `StreamingDownloadService`: Memory-efficient download processing
+- `StreamingResizeService`: Image processing with streaming I/O
+- `ImageProcessingService`: EXIF handling and format conversion
+- `TaskProgressService`: Real-time progress notifications
+- `AuthService`: JWT authentication and user management
+- `ImmichService`: External API communication with database-stored configuration
+- `ConfigController`: Manages Immich settings persistence in SQLite database
+
+**Frontend Components:**
+- `Navigation`: Responsive sidebar with mobile-optimized header layout
+- `Albums`: Album browsing with sync indicators
+- `ActiveTasks`: Real-time progress monitoring
+- `ProfileManagement`: Resize profile configuration
+- `AvailableDownloads`: Completed download management
+- `Configuration`: Web-based setup for Immich server connection
+
+### Custom Docker Compose Setup
+
+For advanced deployments, create a custom `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ImmichDownloader.Web/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - JWT_SECRET_KEY=your-256-bit-secret-key-here
+      - CONNECTION_STRING=Data Source=/app/data/immich_downloader.db
+      - ALLOWED_ORIGINS=http://localhost:8080
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ./resized:/app/resized
+    ports:
+      - "5000:8080"
+
+  frontend:
+    build: ./frontend
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - frontend
+      - backend
+```
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `JWT_SECRET_KEY` | 256-bit secret key for JWT tokens | ✅ | - |
+| `CONNECTION_STRING` | Database connection string | ❌ | SQLite default |
+| `ALLOWED_ORIGINS` | CORS allowed origins (comma-separated) | ❌ | localhost |
+| `DATA_PATH` | Data storage directory | ❌ | `data` |
+
+### Manual Development Setup
+
+#### Backend (.NET 9)
+```bash
+cd backend
+dotnet restore
+dotnet ef database update --project ImmichDownloader.Web
+dotnet run --project ImmichDownloader.Web
+```
+
+#### Frontend (React)
+```bash
+cd frontend
+npm install
+npm start
+```
+
 ## 🤝 Contributing
 
 We welcome contributions! Please follow these guidelines:
 
 ### Getting Started
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/immich-downloader.git`
+2. Clone your fork: `git clone https://github.com/dan-jeff/immich-album-downloader.git`
 3. Create a feature branch: `git checkout -b feature/amazing-feature`
 4. Install dependencies (see [Development](#development))
 
@@ -438,9 +417,9 @@ We welcome contributions! Please follow these guidelines:
 
 ## 🐛 Issues & Support
 
-- **Bug Reports**: [GitHub Issues](https://github.com/your-username/immich-downloader/issues)
-- **Feature Requests**: [GitHub Discussions](https://github.com/your-username/immich-downloader/discussions)
-- **Documentation**: [Wiki](https://github.com/your-username/immich-downloader/wiki)
+- **Bug Reports**: [GitHub Issues](https://github.com/dan-jeff/immich-album-downloader/issues)
+- **Feature Requests**: [GitHub Discussions](https://github.com/dan-jeff/immich-album-downloader/discussions)
+- **Documentation**: [Wiki](https://github.com/dan-jeff/immich-album-downloader/wiki)
 
 ## 📄 License
 
@@ -456,7 +435,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## 📊 Project Status
 
-This project is actively maintained. See the [roadmap](https://github.com/your-username/immich-downloader/projects) for upcoming features.
+This project is actively maintained. See the [roadmap](https://github.com/dan-jeff/immich-album-downloader/projects) for upcoming features.
 
 ---
 
