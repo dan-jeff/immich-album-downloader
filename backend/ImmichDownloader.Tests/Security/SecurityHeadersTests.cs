@@ -23,9 +23,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
 
     public SecurityHeadersTests(WebApplicationFactory<Program> factory)
     {
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";
@@ -60,7 +58,6 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         _client = _factory.CreateClient();
     }
 
-    #region Security Headers Presence Tests
 
     [Theory]
     [InlineData("/api/health")]
@@ -148,9 +145,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         permissionsPolicy.Should().Contain("geolocation=()"); // Should disable geolocation
     }
 
-    #endregion
 
-    #region HTTPS and Transport Security Tests
 
     [Fact]
     public async Task Response_ShouldIncludeStrictTransportSecurity()
@@ -175,9 +170,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         response.Headers.Should().NotContainKey("X-AspNetMvc-Version");
     }
 
-    #endregion
 
-    #region Content Security Policy Detailed Tests
 
     [Fact]
     public async Task CSP_ShouldRestrictScriptSources()
@@ -240,9 +233,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         cspHeader.Should().NotContain("upgrade-insecure-requests");
     }
 
-    #endregion
 
-    #region Rate Limiting Headers Tests
 
     [Fact]
     public async Task Response_ShouldIncludeRateLimitHeaders()
@@ -293,9 +284,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         }
     }
 
-    #endregion
 
-    #region Cache Control Tests
 
     [Fact]
     public async Task ApiEndpoints_ShouldHaveNoCacheHeaders()
@@ -327,9 +316,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         }
     }
 
-    #endregion
 
-    #region Cross-Site Scripting Protection Tests
 
     [Fact]
     public async Task Response_ShouldIncludeXXSSProtection()
@@ -346,9 +333,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         }
     }
 
-    #endregion
 
-    #region MIME Type Security Tests
 
     [Fact]
     public async Task JsonResponse_ShouldHaveCorrectContentType()
@@ -380,9 +365,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         }
     }
 
-    #endregion
 
-    #region Security Headers Validation Method
 
     private async Task ValidateSecurityHeaders(HttpResponseMessage response)
     {
@@ -416,9 +399,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         await Task.CompletedTask; // For consistency with async pattern
     }
 
-    #endregion
 
-    #region Information Disclosure Prevention Tests
 
     [Fact]
     public async Task ErrorResponse_ShouldNotLeakInternalInformation()
@@ -454,9 +435,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         content.Should().NotContain("TRACE");
     }
 
-    #endregion
 
-    #region Environment-Specific Security Tests
 
     [Fact]
     public async Task Production_ShouldHaveStrictSecurityHeaders()
@@ -480,7 +459,6 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         response.Headers.Should().NotContainKey("X-Environment");
     }
 
-    #endregion
 
     public void Dispose()
     {

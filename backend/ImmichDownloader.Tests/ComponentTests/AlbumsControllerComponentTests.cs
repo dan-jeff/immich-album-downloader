@@ -35,9 +35,7 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         _testUsername = $"testuser_{Guid.NewGuid():N}";
         _mockImmichServer = new MockImmichServer();
         
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";
@@ -89,7 +87,6 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         _client = _factory.CreateClient();
     }
 
-    #region Album Synchronization Tests
 
     [Fact]
     public async Task GetAlbums_WithValidConfiguration_ShouldSyncFromImmichServer()
@@ -219,9 +216,7 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         stopwatch.ElapsedMilliseconds.Should().BeLessThan(10000); // 10 seconds max
     }
 
-    #endregion
 
-    #region Database Integration Tests
 
     [Fact]
     public async Task AlbumSync_ShouldCreateNewAlbums()
@@ -306,9 +301,7 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         finalCount.Should().Be(3); // Albums are not removed by current sync implementation
     }
 
-    #endregion
 
-    #region Downloaded Albums Tests
 
     [Fact]
     public async Task GetDownloadedAlbums_ShouldReturnCompletedDownloads()
@@ -371,9 +364,7 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         albums[0].GetProperty("localAssetCount").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
-    #endregion
 
-    #region Statistics Tests
 
     [Fact]
     public async Task GetStats_ShouldCalculateCorrectCounts()
@@ -444,9 +435,7 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         stats.GetProperty("download_count").GetInt32().Should().Be(0);
     }
 
-    #endregion
 
-    #region Thumbnail Proxy Tests
 
     [Fact]
     public async Task ProxyThumbnail_WithValidAsset_ShouldReturnImageData()
@@ -522,9 +511,7 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         response.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.OK);
     }
 
-    #endregion
 
-    #region Helper Methods
 
     private async Task SetupAuthenticatedClientAsync()
     {
@@ -611,7 +598,6 @@ public class AlbumsControllerComponentTests : IClassFixture<WebApplicationFactor
         await context.SaveChangesAsync();
     }
 
-    #endregion
 
     public void Dispose()
     {

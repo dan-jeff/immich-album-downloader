@@ -23,9 +23,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
 
     public CorsSecurityTests(WebApplicationFactory<Program> factory)
     {
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";
@@ -60,7 +58,6 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         _client = _factory.CreateClient();
     }
 
-    #region CORS Preflight Request Tests
 
     [Fact]
     public async Task PreflightRequest_FromAllowedOrigin_ShouldSucceed()
@@ -107,9 +104,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
-    #region Cross-Origin Request Tests
 
     [Fact]
     public async Task CrossOriginRequest_WithoutOriginHeader_ShouldProcess()
@@ -168,9 +163,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
-    #region CORS Method Validation Tests
 
     [Theory]
     [InlineData("GET")]
@@ -220,9 +213,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
-    #region CORS Headers Validation Tests
 
     [Theory]
     [InlineData("Content-Type")]
@@ -274,9 +265,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
-    #region Credentials and Security Tests
 
     [Fact]
     public async Task CorsResponse_ShouldNotAllowCredentialsByDefault()
@@ -321,9 +310,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
-    #region Origin Validation Security Tests
 
     [Theory]
     [InlineData("http://localhost:3000\x00malicious.com")]
@@ -380,9 +367,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
-    #region Environment-Specific CORS Tests
 
     [Fact]
     public async Task CorsConfiguration_ShouldBeEnvironmentAware()
@@ -428,9 +413,7 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
-    #region CORS Security Policy Tests
 
     [Fact]
     public async Task CorsPolicy_ShouldFollowPrincipleOfLeastPrivilege()
@@ -476,7 +459,6 @@ public class CorsSecurityTests : IClassFixture<WebApplicationFactory<Program>>, 
         }
     }
 
-    #endregion
 
     public void Dispose()
     {

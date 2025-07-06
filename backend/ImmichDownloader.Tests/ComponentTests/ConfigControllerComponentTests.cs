@@ -35,9 +35,7 @@ public class ConfigControllerComponentTests : IClassFixture<WebApplicationFactor
         _testUsername = $"testuser_{Guid.NewGuid():N}";
         _mockImmichServer = new MockImmichServer();
         
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";
@@ -89,7 +87,6 @@ public class ConfigControllerComponentTests : IClassFixture<WebApplicationFactor
         _client = _factory.CreateClient();
     }
 
-    #region Configuration Management Tests
 
     [Fact]
     public async Task GetConfig_ShouldReturnCurrentSettings()
@@ -189,9 +186,7 @@ public class ConfigControllerComponentTests : IClassFixture<WebApplicationFactor
         content.Should().Contain("API key is required");
     }
 
-    #endregion
 
-    #region Connection Testing Tests
 
     [Fact]
     public async Task TestConnection_WithValidCredentials_ShouldReturnSuccess()
@@ -293,9 +288,7 @@ public class ConfigControllerComponentTests : IClassFixture<WebApplicationFactor
         content.Should().Contain("Invalid URL format");
     }
 
-    #endregion
 
-    #region Resize Profiles CRUD Tests
 
     [Fact]
     public async Task CreateProfile_WithValidData_ShouldPersistToDatabase()
@@ -492,9 +485,7 @@ public class ConfigControllerComponentTests : IClassFixture<WebApplicationFactor
         result.GetProperty("data").GetProperty("success").GetBoolean().Should().BeTrue();
     }
 
-    #endregion
 
-    #region Authentication Tests
 
     [Fact]
     public async Task ConfigEndpoints_WithoutAuthentication_ShouldReturn401()
@@ -528,9 +519,7 @@ public class ConfigControllerComponentTests : IClassFixture<WebApplicationFactor
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    #endregion
 
-    #region Helper Methods
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync()
     {
@@ -628,7 +617,6 @@ public class ConfigControllerComponentTests : IClassFixture<WebApplicationFactor
         return result.GetProperty("data").GetProperty("id").GetInt32();
     }
 
-    #endregion
 
     public void Dispose()
     {

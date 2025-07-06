@@ -50,6 +50,14 @@ public class ResizeProfile
     public bool IncludeVertical { get; set; }
     
     /// <summary>
+    /// Gets or sets the JPEG quality for resized images.
+    /// Range from 1 (lowest quality, smallest file) to 100 (highest quality, largest file).
+    /// Default is 85 for a good balance between quality and file size.
+    /// </summary>
+    [Range(1, 100, ErrorMessage = "Quality must be between 1 and 100")]
+    public int Quality { get; set; } = 85;
+    
+    /// <summary>
     /// Gets or sets the UTC timestamp when the resize profile was created.
     /// Automatically set to the current UTC time when a new profile is created.
     /// </summary>

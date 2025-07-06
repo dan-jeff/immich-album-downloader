@@ -10,76 +10,47 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ed.svg)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[Features](#features) • [Quick Start](#quick-start) • [Installation](#installation) • [Configuration](#configuration) • [API Documentation](#api-documentation) • [Contributing](#contributing)
+[Overview](#overview--features) • [Quick Start](#quick-start) • [Installation](#installation) • [Configuration](#configuration) • [API Documentation](#api-documentation) • [Contributing](#contributing)
 
 </div>
 
-## 📖 Overview
+## 📖 Overview & Features
 
-Immich Downloader is a powerful web application that allows you to efficiently download and resize photos from [Immich](https://immich.app/) servers. Built with a modern tech stack, it features streaming downloads for large albums, real-time progress tracking, and configurable image processing profiles.
+Immich Downloader is a specialized web application for downloading and processing photos from [Immich](https://immich.app/) servers, designed specifically for **photo frames and wallpaper creation**. It excels at batch processing albums with **intelligent black border padding** to maintain aspect ratios without cropping.
 
-### 🎯 Key Benefits
-
-- **Memory Efficient**: Streaming architecture prevents server crashes on large downloads
-- **Real-time Updates**: Live progress tracking via SignalR
-- **Incremental Downloads**: Only download new photos on subsequent runs
-- **Flexible Resizing**: Custom profiles with orientation filtering
-- **Mobile Responsive**: Works seamlessly on all devices
-- **Production Ready**: Docker support with environment-based configuration
-
-## ✨ Features
-
-### 🚀 Core Functionality
-- **Album Discovery**: Browse and sync albums from Immich servers
-- **Streaming Downloads**: Memory-efficient downloads for albums of any size
-- **Batch Processing**: Download multiple albums with concurrent processing
-- **Incremental Sync**: Smart detection of already downloaded assets
-
-### 🎨 Image Processing
-- **Custom Resize Profiles**: Define width, height, and orientation filters
-- **EXIF Orientation**: Automatic correction of image orientation
-- **Format Support**: HEIC/HEIF conversion with ImageSharp
-- **Quality Control**: Configurable JPEG quality settings
-
-### 📊 Progress Tracking
-- **Real-time Updates**: Live progress bars and status notifications
-- **Detailed Logs**: Comprehensive task history and error reporting
-- **Visual Indicators**: Out-of-sync album detection
-- **Mobile Optimized**: Touch-friendly interface on all devices
-
-### 🔐 Security & Administration
-- **JWT Authentication**: Secure API access with configurable token lifetime
-- **User Management**: BCrypt password hashing with comprehensive validation
-- **Environment Configuration**: Secure secret management with .env files
-- **CORS Protection**: Configurable cross-origin policies with security headers
-- **Rate Limiting**: Configurable API rate limiting for protection
-- **Input Validation**: Comprehensive request validation and sanitization
-- **Secure File Operations**: Safe file access with path traversal protection
+### 🎯 Core Capabilities
+- **Photo Frame Processing**: Create uniformly sized images with intelligent letterboxing/pillarboxing
+- **Custom Quality Control**: Adjustable JPEG quality (1-100%) and orientation filtering
+- **Streaming Architecture**: Memory-efficient processing for albums of any size
+- **Incremental Sync**: Smart detection of new photos on subsequent downloads
+- **Real-time Progress**: Live updates with mobile-responsive interface
+- **Production Ready**: Docker deployment with JWT authentication and comprehensive security
 
 ## 🖼️ Interface Preview
 
 ### Main Dashboard
-![Dashboard](docs/screenshots/dashboard-with-data.png)
+![Dashboard](docs/screenshots/dashboard_desktop.png)
+
 *Clean, modern interface showing album overview and recent activity*
 
-### Configuration Setup
-![Configuration](docs/screenshots/configuration.png)
-*Simple Immich server connection setup with built-in testing*
-
 ### Album Management
-![Albums](docs/screenshots/albums-with-data.png)
-*Browse and download albums with real-time progress tracking*
+![Albums](docs/screenshots/albums_desktop.png)
 
-### Mobile Experience
-![Mobile Dashboard](docs/screenshots/mobile-dashboard.png)
-*Mobile-first responsive design with collapsible navigation*
+![Albums](docs/screenshots/albums_mobile.png)
 
-![Mobile Profiles](docs/screenshots/mobile-profiles.png)
-*Touch-optimized profile management on mobile devices*
+### Tasks
+![Tasks](docs/screenshots/active_tasks_desktop.png)
 
-### Resize Profile Configuration
-![Profile Creation](docs/screenshots/profile-creation.png)
-*Intuitive profile creation with orientation filtering and quality settings*
+![Tasks](docs/screenshots/active_tasks_resize_desktop.png)
+
+![Tasks](docs/screenshots/active_tasks_resize_mobile.png)
+
+### Resize
+![Resize](docs/screenshots/resizer_desktop.png)
+
+### Download
+![Download](docs/screenshots/downloads_desktop.png)
+
 
 ## 🚀 Quick Start
 
@@ -100,7 +71,7 @@ docker-compose up -d
 ```
 
 ### 3. Access Application
-Open your browser to `http://localhost:8080`
+Open your browser to `http://localhost:8082`
 
 ## 📦 Installation
 
@@ -116,7 +87,7 @@ git clone https://github.com/dan-jeff/immich-album-downloader.git
 cd immich-downloader
 docker-compose up -d
 
-# Access at http://localhost:8080
+# Access at http://localhost:8082
 ```
 
 ### Custom Installation
@@ -187,12 +158,6 @@ dotnet test --filter "TestCategory=Security"
 cd frontend
 npm test
 ```
-
-#### Test Coverage
-- **Component Tests**: Full E2E testing of API endpoints with authentication
-- **Security Tests**: JWT validation, CORS, input validation, and security headers
-- **Unit Tests**: Individual service and controller testing
-- **Integration Tests**: Database operations and external service mocking
 
 ## 📝 API Documentation
 
@@ -328,64 +293,20 @@ Get all background tasks with progress.
 **Backend Services:**
 - `StreamingDownloadService`: Memory-efficient download processing with disk-based streaming
 - `StreamingResizeService`: Image processing with streaming I/O to prevent memory overflow
-- `ImageProcessingService`: EXIF handling, HEIC support, and format conversion
-- `TaskExecutor`: Background task management with bounded queuing
-- `AuthService`: JWT authentication with BCrypt password hashing
-- `ImmichService`: External API communication with database-stored configuration
-- `SecureFileService`: Safe file operations with path traversal protection
-- `DatabaseService`: Centralized database operations with proper scoping
+- `ImageProcessingService`: Smart resizing with black border padding, EXIF handling, HEIC support, and configurable JPEG quality (1-100%)
+- `TaskExecutor`: Background task management with bounded queuing for concurrent processing
+- `AuthService`: JWT authentication with BCrypt password hashing and secure session management
+- `ImmichService`: External API communication with database-stored configuration for seamless integration
+- `SecureFileService`: Safe file operations with comprehensive path traversal protection
+- `DatabaseService`: Centralized database operations with proper scoping and incremental sync support
 
 **Frontend Components:**
-- `Navigation`: Responsive sidebar with mobile-optimized header layout
-- `Albums`: Album browsing with sync indicators
-- `ActiveTasks`: Real-time progress monitoring
-- `ProfileManagement`: Resize profile configuration
-- `AvailableDownloads`: Completed download management
-- `Configuration`: Web-based setup for Immich server connection
-
-### Custom Docker Compose Setup
-
-For advanced deployments, create a custom `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: ImmichDownloader.Web/Dockerfile
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - JWT_SECRET_KEY=your-256-bit-secret-key-here
-      - CONNECTION_STRING=Data Source=/app/data/immich_downloader.db
-      - ALLOWED_ORIGINS=http://localhost:8080
-    volumes:
-      - ./data:/app/data
-      - ./downloads:/app/downloads
-      - ./resized:/app/resized
-    ports:
-      - "5000:8080"
-
-  frontend:
-    build: ./frontend
-    environment:
-      - REACT_APP_API_URL=http://localhost:5000
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "8080:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-    depends_on:
-      - frontend
-      - backend
-```
+- `Navigation`: Responsive sidebar with mobile-optimized header layout and touch-friendly interface
+- `Albums`: Album browsing with visual sync indicators and thumbnail preview support
+- `ActiveTasks`: Real-time progress monitoring with live SignalR updates
+- `ProfileManagement`: Resize profile configuration with quality sliders and orientation filtering
+- `AvailableDownloads`: Completed download management with descriptive filenames (album + profile)
+- `Configuration`: Web-based setup for seamless Immich server connection and testing
 
 ### Environment Variables
 
@@ -455,10 +376,6 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 - [SignalR](https://docs.microsoft.com/en-us/aspnet/core/signalr/) - Real-time web functionality
 - [React](https://reactjs.org/) - Frontend framework
 - [Bootstrap](https://getbootstrap.com/) - UI components
-
-## 📊 Project Status
-
-This project is actively maintained. See the [roadmap](https://github.com/dan-jeff/immich-album-downloader/projects) for upcoming features.
 
 ---
 
