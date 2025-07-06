@@ -208,7 +208,7 @@ public class TasksController : SecureControllerBase
                 .AsNoTracking()
                 .Where(t => t.TaskType == TaskType.Resize && 
                            t.Status == Models.TaskStatus.Completed && 
-                           t.ZipData != null)
+                           (t.ZipData != null || !string.IsNullOrEmpty(t.FilePath)))
                 .Join(context.DownloadedAlbums,
                       t => t.DownloadedAlbumId,
                       d => d.Id,
