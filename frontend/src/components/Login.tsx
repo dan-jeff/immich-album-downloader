@@ -39,11 +39,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       if (setupRequired) {
-        // Register new user
-        await api.register(formData.username, formData.password);
-        setSuccess('Account created successfully! Please log in.');
-        setSetupRequired(false);
-        setFormData({ username: '', password: '' });
+        // Register new user and automatically log them in
+        const response = await api.register(formData.username, formData.password);
+        onLogin(response.access_token);
       } else {
         // Login existing user
         const response = await api.login(formData.username, formData.password);

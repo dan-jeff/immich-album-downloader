@@ -40,7 +40,6 @@ public class AuthServiceTests : IDisposable
         _context.Dispose();
     }
 
-    #region UserExistsAsync Tests
 
     [Fact]
     public async Task UserExistsAsync_WhenNoUsers_ShouldReturnFalse()
@@ -79,9 +78,7 @@ public class AuthServiceTests : IDisposable
             .Should().ThrowAsync<ObjectDisposedException>();
     }
 
-    #endregion
 
-    #region CreateUserAsync Tests
 
     [Fact]
     public async Task CreateUserAsync_WithValidCredentials_ShouldCreateUserSuccessfully()
@@ -171,9 +168,7 @@ public class AuthServiceTests : IDisposable
             .Should().ThrowAsync<ObjectDisposedException>();
     }
 
-    #endregion
 
-    #region AuthenticateAsync Tests
 
     [Fact]
     public async Task AuthenticateAsync_WithValidCredentials_ShouldReturnJwtToken()
@@ -275,9 +270,7 @@ public class AuthServiceTests : IDisposable
         // BCrypt.Verify should handle corrupted hashes gracefully by returning false
     }
 
-    #endregion
 
-    #region VerifyUserAsync Tests
 
     [Fact]
     public async Task VerifyUserAsync_WithValidCredentials_ShouldReturnTrue()
@@ -330,9 +323,7 @@ public class AuthServiceTests : IDisposable
         result.Should().BeFalse();
     }
 
-    #endregion
 
-    #region Edge Cases and Security Tests
 
     /// <summary>
     /// Tests potential timing attack vulnerability in user existence checking.
@@ -413,9 +404,7 @@ public class AuthServiceTests : IDisposable
         // Test documents how the service handles extreme input sizes
     }
 
-    #endregion
 
-    #region Helper Methods
 
     private void SetupJwtConfiguration()
     {
@@ -424,5 +413,4 @@ public class AuthServiceTests : IDisposable
                       .Returns("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.mock.token");
     }
 
-    #endregion
 }

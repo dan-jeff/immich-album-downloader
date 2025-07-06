@@ -41,7 +41,6 @@ public class FileAccessSecurityTests : IDisposable
         File.WriteAllText(Path.Combine(_tempDirectory, "root-file.txt"), "This file should NOT be accessible");
     }
 
-    #region Path Validation Tests
 
     [Fact]
     public void ValidateFilePath_WithValidPath_ShouldPass()
@@ -124,9 +123,7 @@ public class FileAccessSecurityTests : IDisposable
         result.Errors.Should().NotBeEmpty();
     }
 
-    #endregion
 
-    #region URL-Encoded Path Injection Tests
 
     [Theory]
     [InlineData("%2e%2e%2f%2e%2e%2fforbidden%2fforbidden-file.txt")] // ../.. encoded
@@ -152,9 +149,7 @@ public class FileAccessSecurityTests : IDisposable
             e.Contains("Symbolic links are not allowed"));
     }
 
-    #endregion
 
-    #region Unicode and Special Character Tests
 
     [Theory]
     [InlineData("..\\forbidden\\forbidden-file.txt")] // Backslash separators
@@ -197,9 +192,7 @@ public class FileAccessSecurityTests : IDisposable
         result.Errors.Should().NotBeEmpty();
     }
 
-    #endregion
 
-    #region Symbolic Link and Junction Tests
 
     [Fact]
     public void ValidateFilePath_WithSymbolicLinkToForbiddenArea_ShouldDetectAndReject()
@@ -257,9 +250,7 @@ public class FileAccessSecurityTests : IDisposable
         }
     }
 
-    #endregion
 
-    #region Logging and Monitoring Tests
 
     [Fact]
     public void ValidateFilePath_WithMaliciousAttempt_ShouldLogWarning()
@@ -282,7 +273,6 @@ public class FileAccessSecurityTests : IDisposable
     }
 
 
-    #endregion
 
     public void Dispose()
     {

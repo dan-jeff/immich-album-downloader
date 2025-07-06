@@ -6,7 +6,7 @@ class API {
 
   constructor() {
     this.client = axios.create({
-      baseURL: process.env.REACT_APP_API_URL || 'http://192.168.68.21:5000/api',
+      baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5001/api',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -48,7 +48,7 @@ class API {
     return response.data;
   }
 
-  public async register(username: string, password: string): Promise<{ message: string }> {
+  public async register(username: string, password: string): Promise<{ access_token: string; token_type?: string }> {
     const response = await this.client.post('/auth/register', { username, password });
     return response.data;
   }
@@ -82,6 +82,21 @@ class API {
 
   public async getDownloadedAlbums(): Promise<any[]> {
     const response = await this.client.get('/downloaded-albums');
+    return response.data;
+  }
+
+  public async removeLocalAssets(albumId: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.delete(`/albums/${albumId}/local`);
+    return response.data;
+  }
+
+  public async cleanupOrphanedAssets(): Promise<{ 
+    success: boolean; 
+    message: string; 
+    summary: { albumsProcessed: number; orphansFound: number; orphansRemoved: number }; 
+    details: any[] 
+  }> {
+    const response = await this.client.post('/albums/cleanup-orphans');
     return response.data;
   }
 
@@ -168,6 +183,18 @@ class API {
   // Thumbnail helper
   public getAlbumThumbnailUrl(albumId: string, assetId: string): string {
     return `/api/proxy/thumbnail/${assetId}`;
+  }
+
+  public async getAlbumThumbnailBlob(assetId: string): Promise<Blob | null> {
+    try {
+      const response = await this.client.get(`/proxy/thumbnail/${assetId}`, {
+        responseType: 'blob'
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching thumbnail:', error);
+      return null;
+    }
   }
 
   public getAuthHeaders(): Record<string, string> {

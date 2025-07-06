@@ -38,11 +38,11 @@ public class AuthController : SecureControllerBase
     }
 
     /// <summary>
-    /// Registers a new user account. Only allows registration if no users exist yet.
+    /// Registers a new user account and automatically logs them in. Only allows registration if no users exist yet.
     /// </summary>
     /// <param name="request">The registration request containing username and password.</param>
-    /// <returns>A result indicating success or failure of the registration.</returns>
-    /// <response code="200">User created successfully.</response>
+    /// <returns>A JWT token if registration and authentication is successful, otherwise an error.</returns>
+    /// <response code="200">User created and authenticated successfully, returns JWT token.</response>
     /// <response code="400">Invalid request data or user already exists.</response>
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
@@ -70,9 +70,18 @@ public class AuthController : SecureControllerBase
             return BadRequest(new { detail = "Failed to create user" });
         }
 
-        Logger.LogInformation("User {Username} registered successfully from IP: {IpAddress}", 
+        // Automatically authenticate the newly created user
+        var token = await _authService.AuthenticateAsync(request.Username, request.Password);
+        if (token == null)
+        {
+            Logger.LogWarning("Failed to authenticate newly created user {Username} from IP: {IpAddress}", 
+                request.Username, Request.HttpContext.Connection.RemoteIpAddress);
+            return BadRequest(new { detail = "User created but authentication failed" });
+        }
+
+        Logger.LogInformation("User {Username} registered and authenticated successfully from IP: {IpAddress}", 
             request.Username, Request.HttpContext.Connection.RemoteIpAddress);
-        return CreateSuccessResponse(null, "User created successfully");
+        return Ok(new TokenResponse { access_token = token });
     }
 
     /// <summary>

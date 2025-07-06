@@ -32,8 +32,10 @@ const ActiveTasks: React.FC = () => {
   const handleWebSocketMessage = useCallback((message: any) => {
     console.log('ActiveTasks received WebSocket message:', message);
     // Refresh task list when any task status changes
-    if (message.TaskId && (message.Type === 'download' || message.Type === 'resize')) {
-      console.log('Refreshing tasks due to message type:', message.Type);
+    // Check both TaskId and taskId for compatibility, and accept any Type
+    const taskId = message.TaskId || message.taskId;
+    if (taskId) {
+      console.log('Refreshing tasks due to SignalR message for task:', taskId);
       fetchTasks();
     }
   }, [fetchTasks]);
@@ -60,17 +62,19 @@ const ActiveTasks: React.FC = () => {
   useEffect(() => {
     // Initial fetch
     fetchTasks();
-    
-    // Polling fallback every 5 seconds for active tasks
+  }, [fetchTasks]);
+
+  useEffect(() => {
+    // Polling fallback every 5 seconds when SignalR is disconnected
     const pollInterval = setInterval(() => {
-      // Only poll if we have active tasks or aren't connected to SignalR
-      if (!isConnected || tasks.some(task => task.status === 'in_progress' || task.status === 'pending')) {
+      // Only poll if SignalR is disconnected to prevent duplicate requests
+      if (!isConnected) {
         fetchTasks();
       }
     }, 5000);
     
     return () => clearInterval(pollInterval);
-  }, [fetchTasks, isConnected, tasks]);
+  }, [fetchTasks, isConnected]);
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, string> = {

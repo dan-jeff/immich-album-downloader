@@ -1,5 +1,8 @@
+version: '3.9'
+
 services:
   backend:
+    container_name: immich-downloader-backend
     build:
       context: ./backend
       dockerfile: ImmichDownloader.Web/Dockerfile
@@ -12,7 +15,7 @@ services:
       - Jwt__Issuer=${JWT_ISSUER:-ImmichDownloader}
       - Jwt__Audience=${JWT_AUDIENCE:-ImmichDownloader}
       - Jwt__TokenLifetimeHours=${JWT_TOKEN_LIFETIME_HOURS:-24}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8082,http://127.0.0.1:8082
     volumes:
       - backend-data:/app/data
     expose:
@@ -20,6 +23,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    container_name: immich-downloader-frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -27,19 +31,15 @@ services:
         - REACT_APP_API_URL=/api
     expose:
       - "80"
-    depends_on:
-      - backend
     restart: unless-stopped
 
   nginx:
+    container_name: immich-downloader-nginx
     image: nginx:alpine
     ports:
-      - "8080:80"
+      - "8082:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - frontend
-      - backend
     restart: unless-stopped
 
 volumes:

@@ -72,7 +72,13 @@ public class StreamingDownloadService : IStreamingDownloadService
         _immichService = immichService;
         _scopeFactory = scopeFactory;
         _hubContext = hubContext;
-        _downloadsPath = Path.Combine(configuration.GetValue<string>("DataPath") ?? "data", "downloads");
+        var dataPath = configuration.GetValue<string>("DataPath") ?? "data";
+        // Ensure absolute path for Docker container
+        if (!Path.IsPathRooted(dataPath))
+        {
+            dataPath = Path.Combine("/app", dataPath);
+        }
+        _downloadsPath = Path.Combine(dataPath, "downloads");
         
         // Ensure downloads directory exists
         Directory.CreateDirectory(_downloadsPath);
@@ -104,6 +110,17 @@ public class StreamingDownloadService : IStreamingDownloadService
             }
 
             _immichService.Configure(immichUrl, apiKey);
+            
+            // Test connection with retry logic to handle container restart scenarios
+            var (connectionSuccess, connectionMessage) = await ValidateConnectionWithRetryAsync(immichUrl, apiKey, taskId);
+            if (!connectionSuccess)
+            {
+                _logger.LogError("Immich connection validation failed after retries: {Message}", connectionMessage);
+                await UpdateTaskAsync(taskId, Models.TaskStatus.Error, $"Connection failed: {connectionMessage}");
+                return;
+            }
+            
+            _logger.LogInformation("Immich connection validated successfully");
 
             // Get album info
             var (success, albumInfo, error) = await _immichService.GetAlbumInfoAsync(albumId);
@@ -118,6 +135,18 @@ public class StreamingDownloadService : IStreamingDownloadService
             
             // Check which assets are already downloaded
             var existingAssetIds = await GetExistingAssetIdsAsync(albumId);
+            
+            // Detect removed assets (exist locally but not in remote album)
+            var remoteAssetIds = allPhotos.Select(a => a.Id).ToHashSet();
+            var removedAssets = existingAssetIds.Where(id => !remoteAssetIds.Contains(id)).ToList();
+            
+            if (removedAssets.Any())
+            {
+                _logger.LogInformation("Album {AlbumId} has {RemovedCount} assets that were removed from remote", albumId, removedAssets.Count);
+                await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, $"Cleaning up {removedAssets.Count} removed assets...");
+                await CleanupRemovedAssetsAsync(albumId, removedAssets);
+            }
+            
             var photos = allPhotos.Where(a => !existingAssetIds.Contains(a.Id)).ToList();
             var toDownload = photos.Count;
             
@@ -125,7 +154,11 @@ public class StreamingDownloadService : IStreamingDownloadService
 
             if (toDownload == 0)
             {
-                // Create empty ZIP file for empty albums
+                var message = removedAssets.Any() 
+                    ? $"Sync complete! Cleaned up {removedAssets.Count} removed assets, no new photos to download"
+                    : "All photos already downloaded";
+                
+                // Create empty ZIP file for empty albums or when no new downloads are needed
                 var emptyZipFilePath = Path.Combine(_downloadsPath, $"{taskId}.zip");
                 using (var zipFileStream = new FileStream(emptyZipFilePath, FileMode.Create, FileAccess.Write))
                 using (var zipArchive = new ZipArchive(zipFileStream, ZipArchiveMode.Create, false))
@@ -135,10 +168,10 @@ public class StreamingDownloadService : IStreamingDownloadService
                 
                 // Save album metadata with 0 photos
                 await SaveDownloadedAlbumAsync(albumId, albumName, 0, emptyZipFilePath);
-                await UpdateTaskAsync(taskId, Models.TaskStatus.Completed, "All photos already downloaded", 0, 0);
-                await NotifyProgressAsync(taskId, Models.TaskStatus.Completed, "Download complete!");
+                await UpdateTaskAsync(taskId, Models.TaskStatus.Completed, message, 0, 0);
+                await NotifyProgressAsync(taskId, Models.TaskStatus.Completed, "Sync complete!");
                 
-                _logger.LogInformation("Completed download for empty album {AlbumId}", albumId);
+                _logger.LogInformation("Completed sync for album {AlbumId} - {Message}", albumId, message);
                 return;
             }
 
@@ -181,14 +214,11 @@ public class StreamingDownloadService : IStreamingDownloadService
                                 await RecordDownloadedAssetAsync(albumId, photo.Id);
                                 Interlocked.Increment(ref downloadedCount);
                                 
-                                // Update progress every 10 downloads
-                                if (downloadedCount % 10 == 0)
-                                {
-                                    await UpdateTaskAsync(taskId, Models.TaskStatus.InProgress, 
-                                        $"Downloaded {downloadedCount}/{toDownload} photos", downloadedCount, toDownload);
-                                    await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, 
-                                        $"Downloaded {downloadedCount}/{toDownload} photos", downloadedCount, toDownload);
-                                }
+                                // Update progress after each download for better user feedback
+                                await UpdateTaskAsync(taskId, Models.TaskStatus.InProgress, 
+                                    $"Downloaded {downloadedCount}/{toDownload} photos", downloadedCount, toDownload);
+                                await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, 
+                                    $"Downloaded {downloadedCount}/{toDownload} photos", downloadedCount, toDownload);
                             }
                             else
                             {
@@ -431,10 +461,19 @@ public class StreamingDownloadService : IStreamingDownloadService
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             
+            // Ensure database is available and context is working
+            await context.Database.EnsureCreatedAsync();
+            
             var urlSetting = await context.AppSettings.FirstOrDefaultAsync(s => s.Key == "Immich:Url");
             var apiKeySetting = await context.AppSettings.FirstOrDefaultAsync(s => s.Key == "Immich:ApiKey");
             
-            return (urlSetting?.Value, apiKeySetting?.Value);
+            var url = urlSetting?.Value;
+            var apiKey = apiKeySetting?.Value;
+            
+            _logger.LogInformation("Retrieved Immich settings - URL set: {UrlSet}, API Key set: {ApiKeySet}", 
+                !string.IsNullOrEmpty(url), !string.IsNullOrEmpty(apiKey));
+            
+            return (url, apiKey);
         }
         catch (Exception ex)
         {
@@ -452,16 +491,122 @@ public class StreamingDownloadService : IStreamingDownloadService
         {
             await _hubContext.Clients.All.SendAsync("TaskStatusUpdated", new
             {
-                taskId,
-                status = status.ToString().ToLowerInvariant(),
-                message,
-                progress,
-                total
+                TaskId = taskId,
+                Type = "download",
+                Status = status.ToString().ToLowerInvariant(),
+                Message = message,
+                Progress = progress,
+                Total = total
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error sending progress notification for task {TaskId}", taskId);
         }
+    }
+
+    /// <summary>
+    /// Cleans up assets that were removed from the remote album.
+    /// Removes the asset records from the database but keeps the ZIP file intact.
+    /// </summary>
+    /// <param name="albumId">The album ID containing the removed assets.</param>
+    /// <param name="removedAssetIds">List of asset IDs that were removed from the remote album.</param>
+    private async Task CleanupRemovedAssetsAsync(string albumId, List<string> removedAssetIds)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            
+            // Find and remove the asset records from database
+            var assetsToRemove = await context.DownloadedAssets
+                .Where(da => da.AlbumId == albumId && removedAssetIds.Contains(da.AssetId))
+                .ToListAsync();
+            
+            if (assetsToRemove.Any())
+            {
+                context.DownloadedAssets.RemoveRange(assetsToRemove);
+                await context.SaveChangesAsync();
+                
+                _logger.LogInformation("Removed {Count} asset records from database for album {AlbumId}", 
+                    assetsToRemove.Count, albumId);
+                
+                // Update the album's photo count
+                var downloadedAlbum = await context.DownloadedAlbums
+                    .FirstOrDefaultAsync(da => da.AlbumId == albumId);
+                
+                if (downloadedAlbum != null)
+                {
+                    var remainingAssetCount = await context.DownloadedAssets
+                        .CountAsync(da => da.AlbumId == albumId);
+                    
+                    downloadedAlbum.PhotoCount = remainingAssetCount;
+                    await context.SaveChangesAsync();
+                    
+                    _logger.LogInformation("Updated album {AlbumId} photo count to {Count}", 
+                        albumId, remainingAssetCount);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error cleaning up removed assets for album {AlbumId}", albumId);
+        }
+    }
+
+    /// <summary>
+    /// Validates the Immich connection with retry logic and exponential backoff.
+    /// This handles scenarios where the container restarts and connections are temporarily unavailable.
+    /// </summary>
+    /// <param name="immichUrl">The Immich server URL.</param>
+    /// <param name="apiKey">The API key for authentication.</param>
+    /// <param name="taskId">The current task ID for progress updates.</param>
+    /// <returns>A tuple indicating success and any error message.</returns>
+    private async Task<(bool Success, string Message)> ValidateConnectionWithRetryAsync(string immichUrl, string apiKey, string taskId)
+    {
+        const int maxRetries = 3;
+        const int baseDelayMs = 1000; // Start with 1 second delay
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, $"Testing connection to Immich server (attempt {attempt}/{maxRetries})...");
+                
+                var (success, message) = await _immichService.ValidateConnectionAsync(immichUrl, apiKey);
+                if (success)
+                {
+                    return (true, message);
+                }
+                
+                _logger.LogWarning("Connection attempt {Attempt}/{MaxRetries} failed: {Message}", attempt, maxRetries, message);
+                
+                // If this is the last attempt, return the failure
+                if (attempt == maxRetries)
+                {
+                    return (false, $"Connection failed after {maxRetries} attempts: {message}");
+                }
+                
+                // Wait before retrying with exponential backoff
+                var delay = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, $"Retrying connection in {delay / 1000} seconds...");
+                await Task.Delay(delay);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during connection validation attempt {Attempt}/{MaxRetries}", attempt, maxRetries);
+                
+                if (attempt == maxRetries)
+                {
+                    return (false, $"Connection failed after {maxRetries} attempts: {ex.Message}");
+                }
+                
+                // Wait before retrying
+                var delay = baseDelayMs * (int)Math.Pow(2, attempt - 1);
+                await Task.Delay(delay);
+            }
+        }
+        
+        return (false, "Connection validation failed");
     }
 }

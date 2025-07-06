@@ -93,7 +93,7 @@ const Resizer: React.FC = () => {
                     required
                   >
                     <option value="">Choose an album...</option>
-                    {albums.map(album => (
+                    {albums.sort((a, b) => a.albumName.localeCompare(b.albumName)).map(album => (
                       <option key={album.id} value={album.id}>
                         {album.albumName} ({album.localAssetCount || 0} local assets)
                       </option>
