@@ -36,15 +36,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           await api.checkSetup();
           setIsAuthenticated(true);
         } catch (error: any) {
-          // Token is invalid or expired
-          if (error.response?.status === 401) {
-            localStorage.removeItem('token');
-            api.setAuthToken('');
-            setIsAuthenticated(false);
-          } else {
-            // Network error - assume token is valid for offline use
-            setIsAuthenticated(true);
-          }
+          // Any authentication check failure results in token removal and logout
+          localStorage.removeItem('token');
+          api.setAuthToken('');
+          setIsAuthenticated(false);
         }
       }
       setLoading(false);

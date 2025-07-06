@@ -76,6 +76,12 @@ public class HealthController : ControllerBase
         if (diskHealth.Status != "healthy")
             overallStatus = "degraded";
 
+        // Check Immich connectivity
+        var immichHealth = await CheckImmichHealth();
+        healthChecks.Add(immichHealth);
+        if (immichHealth.Status == "unhealthy")
+            overallStatus = "degraded";
+
         var result = new
         {
             status = overallStatus,
@@ -263,6 +269,62 @@ public class HealthController : ControllerBase
             return new HealthCheckResult
             {
                 Name = "disk_space",
+                Status = "unhealthy",
+                ResponseTime = null,
+                Details = new { error = ex.Message }
+            };
+        }
+    }
+
+    /// <summary>
+    /// Checks Immich server connectivity if configured.
+    /// </summary>
+    private async Task<HealthCheckResult> CheckImmichHealth()
+    {
+        try
+        {
+            var stopwatch = Stopwatch.StartNew();
+            
+            // Get Immich settings from database
+            var urlSetting = await _context.AppSettings.FirstOrDefaultAsync(s => s.Key == "Immich:Url");
+            var apiKeySetting = await _context.AppSettings.FirstOrDefaultAsync(s => s.Key == "Immich:ApiKey");
+            
+            if (string.IsNullOrEmpty(urlSetting?.Value) || string.IsNullOrEmpty(apiKeySetting?.Value))
+            {
+                stopwatch.Stop();
+                return new HealthCheckResult
+                {
+                    Name = "immich_server",
+                    Status = "not_configured",
+                    ResponseTime = stopwatch.ElapsedMilliseconds,
+                    Details = new { message = "Immich server not configured" }
+                };
+            }
+
+            // Test connection
+            _immichService.Configure(urlSetting.Value, apiKeySetting.Value);
+            var (success, message) = await _immichService.ValidateConnectionAsync(urlSetting.Value, apiKeySetting.Value);
+            stopwatch.Stop();
+
+            return new HealthCheckResult
+            {
+                Name = "immich_server",
+                Status = success ? "healthy" : "unhealthy",
+                ResponseTime = stopwatch.ElapsedMilliseconds,
+                Details = new 
+                { 
+                    message = message,
+                    server_url = urlSetting.Value,
+                    connection_time_ms = stopwatch.ElapsedMilliseconds
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Immich health check failed");
+            return new HealthCheckResult
+            {
+                Name = "immich_server",
                 Status = "unhealthy",
                 ResponseTime = null,
                 Details = new { error = ex.Message }

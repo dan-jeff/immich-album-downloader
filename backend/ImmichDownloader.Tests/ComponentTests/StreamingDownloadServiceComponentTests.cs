@@ -105,7 +105,6 @@ public class StreamingDownloadServiceComponentTests : IDisposable
             configuration);
     }
 
-    #region Core Download Functionality Tests
 
     [Fact]
     public async Task StartDownloadAsync_WithValidAlbum_ShouldCreateZipFile()
@@ -212,9 +211,7 @@ public class StreamingDownloadServiceComponentTests : IDisposable
         }
     }
 
-    #endregion
 
-    #region Progress Tracking Tests
 
     [Fact]
     public async Task StartDownloadAsync_ShouldReportProgressUpdates()
@@ -291,9 +288,7 @@ public class StreamingDownloadServiceComponentTests : IDisposable
         // Should report error via SignalR, but cannot verify SendAsync calls
     }
 
-    #endregion
 
-    #region Memory Management Tests
 
     [Fact]
     public async Task StartDownloadAsync_WithLargeAlbum_ShouldNotExceedMemoryLimits()
@@ -370,9 +365,7 @@ public class StreamingDownloadServiceComponentTests : IDisposable
         fileInfo.Length.Should().BeGreaterThan(0);
     }
 
-    #endregion
 
-    #region Error Handling Tests
 
     [Fact]
     public async Task StartDownloadAsync_WithNetworkErrors_ShouldFailGracefully()
@@ -436,9 +429,7 @@ public class StreamingDownloadServiceComponentTests : IDisposable
         }
     }
 
-    #endregion
 
-    #region File Management Tests
 
     [Fact]
     public async Task GetDownloadStream_ShouldReturnValidZipStream()
@@ -492,9 +483,7 @@ public class StreamingDownloadServiceComponentTests : IDisposable
         downloadedAlbum.Should().NotBeNull(); // Service only deletes files, keeps database record for history
     }
 
-    #endregion
 
-    #region Helper Methods
 
     private async Task SeedTestDataAsync(string taskId)
     {
@@ -520,7 +509,6 @@ public class StreamingDownloadServiceComponentTests : IDisposable
         await context.SaveChangesAsync();
     }
 
-    #endregion
 
     public void Dispose()
     {

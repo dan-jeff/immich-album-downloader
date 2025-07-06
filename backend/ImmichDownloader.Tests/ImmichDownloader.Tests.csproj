@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- Limit test parallelization to reduce inotify pressure -->
+    <XunitMaxParallelThreads>1</XunitMaxParallelThreads>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +29,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ImmichDownloader.Web\ImmichDownloader.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

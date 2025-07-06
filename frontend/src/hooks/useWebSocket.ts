@@ -61,7 +61,7 @@ export const useWebSocket = (onMessage?: (message: WebSocketMessage) => void) =>
       });
 
       // Listen for task progress messages
-      connection.current.on('TaskProgress', (message: WebSocketMessage) => {
+      connection.current.on('TaskStatusUpdated', (message: WebSocketMessage) => {
         console.log('Received task progress:', message);
         if (onMessage) {
           onMessage(message);

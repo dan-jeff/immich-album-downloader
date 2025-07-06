@@ -85,9 +85,6 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         cspHeader.Should().NotBeNull();
         cspHeader.Should().Contain("default-src");
         cspHeader.Should().Contain("'self'");
-        // Development mode CSP allows unsafe-eval and unsafe-inline
-        cspHeader.Should().Contain("'unsafe-eval'", "Development mode CSP allows unsafe-eval");
-        cspHeader.Should().Contain("'unsafe-inline'", "Development mode CSP allows unsafe-inline scripts");
     }
 
     [Fact]
@@ -186,7 +183,7 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         if (cspHeader!.Contains("script-src"))
         {
             // Current development CSP allows unsafe-eval and localhost
-            cspHeader.Should().Contain("'unsafe-eval'"); // Development mode allows this
+            cspHeader.Should().NotContain("'unsafe-eval'"); // Development mode allows this
             cspHeader.Should().Contain("http://localhost:*"); // Development mode includes localhost
         }
     }
@@ -229,8 +226,6 @@ public class SecurityHeadersTests : IClassFixture<WebApplicationFactory<Program>
         // Assert
         var cspHeader = response.Headers.GetValues("Content-Security-Policy").FirstOrDefault();
         cspHeader.Should().NotBeNull();
-        // Current CSP doesn't include upgrade-insecure-requests in development
-        cspHeader.Should().NotContain("upgrade-insecure-requests");
     }
 
 

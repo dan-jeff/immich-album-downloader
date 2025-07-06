@@ -8,8 +8,24 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using SixLabors.ImageSharp;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Disable file watching in test environment to prevent inotify limit issues
+if (builder.Environment.EnvironmentName == "Test" || 
+    builder.Environment.EnvironmentName == "Testing" ||
+    Environment.GetEnvironmentVariable("DOTNET_DISABLE_FILE_WATCHING") == "true")
+{
+    builder.Configuration.Sources.Clear();
+    builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: false);
+    builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: false);
+    builder.Configuration.AddEnvironmentVariables();
+    if (args.Length > 0)
+    {
+        builder.Configuration.AddCommandLine(args);
+    }
+}
 
 // Validate configuration at startup
 builder.Services.AddConfigurationValidation(builder.Configuration, builder.Environment);
@@ -130,9 +146,11 @@ builder.Services.AddCors(options =>
                 // Secure localhost origins for development
                 policy.WithOrigins(
                     "http://localhost:3000",    // React dev server
-                    "http://localhost:8080",    // Docker container
+                    "http://localhost:8080",    // Docker container (old port)
+                    "http://localhost:8082",    // Docker container (new port)
                     "http://127.0.0.1:3000",
-                    "http://127.0.0.1:8080"
+                    "http://127.0.0.1:8080",    // Docker container (old port)
+                    "http://127.0.0.1:8082"     // Docker container (new port)
                 );
             }
             
@@ -226,7 +244,7 @@ static void RegisterProcessingServices(IServiceCollection services)
 static void RegisterTaskServices(IServiceCollection services)
 {
     services.AddSingleton<TaskExecutor>();
-    services.AddHostedService<TaskExecutor>();
+    services.AddHostedService(provider => provider.GetRequiredService<TaskExecutor>());
 }
 
 // Make Program class accessible for testing

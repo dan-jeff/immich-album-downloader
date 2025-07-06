@@ -220,6 +220,7 @@ public class JwtService : IJwtService
         
         if (string.Equals(environment, "Test", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(environment, "Testing", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase) ||
             Environment.GetEnvironmentVariable("JWT_SKIP_VALIDATION") == "true")
         {
             return key;

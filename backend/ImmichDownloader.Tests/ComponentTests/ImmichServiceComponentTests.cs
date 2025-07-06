@@ -35,7 +35,6 @@ public class ImmichServiceComponentTests : IDisposable
         _immichService = new ImmichService(httpClientFactory.Object, _loggerMock.Object, loggerFactory.Object);
     }
 
-    #region Configuration Tests
 
     [Fact]
     public void Configure_WithValidCredentials_ShouldSetupCorrectly()
@@ -88,9 +87,7 @@ public class ImmichServiceComponentTests : IDisposable
             .WithMessage("*API key cannot be empty*");
     }
 
-    #endregion
 
-    #region Connection Validation Tests
 
     [Fact]
     public async Task ValidateConnectionAsync_WithValidServer_ShouldReturnTrue()
@@ -145,9 +142,7 @@ public class ImmichServiceComponentTests : IDisposable
         result.Success.Should().BeFalse();
     }
 
-    #endregion
 
-    #region Album Operations Tests
 
     [Fact]
     public async Task GetAlbumsAsync_WithValidResponse_ShouldReturnAlbums()
@@ -251,9 +246,7 @@ public class ImmichServiceComponentTests : IDisposable
         stopwatch.ElapsedMilliseconds.Should().BeLessThan(5000); // Should complete within 5 seconds
     }
 
-    #endregion
 
-    #region Asset Download Tests
 
     [Fact]
     public async Task DownloadAssetAsync_WithValidAsset_ShouldReturnStream()
@@ -297,9 +290,7 @@ public class ImmichServiceComponentTests : IDisposable
         result.Data!.Length.Should().BeGreaterThan(1000); // Mock returns 50KB
     }
 
-    #endregion
 
-    #region Error Handling Tests
 
     [Fact]
     public async Task ApiCalls_WithNetworkErrors_ShouldRetryAndFail()
@@ -344,7 +335,6 @@ public class ImmichServiceComponentTests : IDisposable
             .WithMessage("*Immich service is not configured*");
     }
 
-    #endregion
 
     public void Dispose()
     {

@@ -105,6 +105,14 @@ public class RateLimitingMiddleware
                 Description = "Upload/processing endpoints"
             },
             
+            // Polling endpoints - no rate limiting to allow frequent status checks
+            ["polling"] = new RateLimitRule
+            {
+                MaxRequests = _configuration.GetValue<int>("POLLING_RATE_LIMIT", int.MaxValue),
+                WindowMinutes = _configuration.GetValue<int>("POLLING_RATE_LIMIT_WINDOW_MINUTES", 1),
+                Description = "Polling endpoints (no rate limiting)"
+            },
+            
             // Default for all other endpoints
             ["default"] = new RateLimitRule
             {
@@ -113,6 +121,17 @@ public class RateLimitingMiddleware
                 Description = "Default rate limit"
             }
         };
+    }
+
+    private bool IsPollingEndpoint(string path, string method)
+    {
+        // Only apply polling exemption to GET requests
+        if (method != "GET")
+            return false;
+
+        // Polling endpoints that should be exempt from rate limiting
+        return path == "/api/tasks" ||           // GetActiveTasks - main polling endpoint
+               path == "/api/downloads";         // GetCompletedDownloads - potentially polled
     }
 
     private string GetClientIpAddress(HttpContext context)
@@ -136,6 +155,11 @@ public class RateLimitingMiddleware
     private string GetEndpointKey(HttpContext context)
     {
         var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
+        var method = context.Request.Method.ToUpperInvariant();
+
+        // Exclude polling APIs from rate limiting
+        if (IsPollingEndpoint(path, method))
+            return "polling";
 
         // Categorize endpoints for different rate limits
         if (path.StartsWith("/api/auth"))

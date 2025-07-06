@@ -23,28 +23,24 @@ RUN dotnet publish -c Release -o /app/publish
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
-WORKDIR /app
 
-# Install ImageSharp dependencies
-RUN apt-get update && apt-get install -y \
-    libgdiplus \
-    libc6-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -u 5678 appuser
+
+WORKDIR /app
 
 # Copy published output
 COPY --from=publish /app/publish .
 
-# React build will be served separately in production
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/data/downloads /app/data/resized && \
+    chown -R appuser:appuser /app
 
-# Create necessary directories
-RUN mkdir -p downloads resized data
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 5000
-
-# Set environment variables
-ENV ASPNETCORE_URLS=http://+:5000
-ENV ASPNETCORE_ENVIRONMENT=Production
 
 # Run the application
 ENTRYPOINT ["dotnet", "ImmichDownloader.Web.dll"]

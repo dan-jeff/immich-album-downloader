@@ -19,8 +19,14 @@ public class SecureFileService : ISecureFileService
         _configuration = configuration;
         
         // Initialize secure directories
-        _downloadDirectory = InitializeSecureDirectory("Downloads", "/app/downloads");
-        _tempDirectory = InitializeSecureDirectory("Temp", "/app/temp");
+        var dataPath = configuration.GetValue<string>("DataPath") ?? "data";
+        // Ensure absolute path for Docker container
+        if (!Path.IsPathRooted(dataPath))
+        {
+            dataPath = Path.Combine("/app", dataPath);
+        }
+        _downloadDirectory = InitializeSecureDirectory("Downloads", Path.Combine(dataPath, "downloads"));
+        _tempDirectory = InitializeSecureDirectory("Temp", Path.Combine(dataPath, "temp"));
     }
 
     /// <summary>
@@ -69,7 +75,9 @@ public class SecureFileService : ISecureFileService
             }
             
             // Resolve and normalize paths first
-            var fullFilePath = Path.GetFullPath(filePath);
+            // Combine the file path with the base path to get the full path
+            var combinedPath = Path.Combine(allowedBasePath, filePath);
+            var fullFilePath = Path.GetFullPath(combinedPath);
             var fullBasePath = Path.GetFullPath(allowedBasePath);
             
             // Ensure the file path is within the allowed base path (this is the real security check)
@@ -133,7 +141,7 @@ public class SecureFileService : ISecureFileService
             throw new UnauthorizedAccessException($"File access denied: {string.Join(", ", validation.Errors)}");
         }
 
-        var fullPath = Path.GetFullPath(filePath);
+        var fullPath = Path.GetFullPath(Path.Combine(allowedBasePath, filePath));
         
         if (!File.Exists(fullPath))
         {
@@ -164,7 +172,7 @@ public class SecureFileService : ISecureFileService
             throw new UnauthorizedAccessException($"File access denied: {string.Join(", ", validation.Errors)}");
         }
 
-        var fullPath = Path.GetFullPath(filePath);
+        var fullPath = Path.GetFullPath(Path.Combine(allowedBasePath, filePath));
         
         // Ensure directory exists for write operations
         if (mode == FileMode.Create || mode == FileMode.CreateNew || mode == FileMode.OpenOrCreate)
@@ -200,7 +208,7 @@ public class SecureFileService : ISecureFileService
             throw new UnauthorizedAccessException($"File access denied: {string.Join(", ", validation.Errors)}");
         }
 
-        var fullPath = Path.GetFullPath(filePath);
+        var fullPath = Path.GetFullPath(Path.Combine(allowedBasePath, filePath));
         
         // Ensure directory exists
         var directory = Path.GetDirectoryName(fullPath);
@@ -232,7 +240,7 @@ public class SecureFileService : ISecureFileService
             throw new UnauthorizedAccessException($"File access denied: {string.Join(", ", validation.Errors)}");
         }
 
-        var fullPath = Path.GetFullPath(filePath);
+        var fullPath = Path.GetFullPath(Path.Combine(allowedBasePath, filePath));
         
         if (!File.Exists(fullPath))
         {
@@ -260,16 +268,21 @@ public class SecureFileService : ISecureFileService
         var validation = ValidateFilePath(filePath, allowedBasePath);
         if (!validation.IsValid)
         {
+            _logger.LogWarning("File path validation failed for '{FilePath}' in '{AllowedBasePath}': {Errors}",
+                filePath, allowedBasePath, string.Join(", ", validation.Errors));
             return false; // Don't throw exception, just return false for security
         }
 
         try
         {
-            var fullPath = Path.GetFullPath(filePath);
-            return File.Exists(fullPath);
+            var fullPath = Path.GetFullPath(Path.Combine(allowedBasePath, filePath));
+            var exists = File.Exists(fullPath);
+            _logger.LogInformation("File existence check: '{FullPath}' exists: {Exists}", fullPath, exists);
+            return exists;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error checking file existence for '{FilePath}' in '{AllowedBasePath}'", filePath, allowedBasePath);
             return false; // Don't leak path information through exceptions
         }
     }

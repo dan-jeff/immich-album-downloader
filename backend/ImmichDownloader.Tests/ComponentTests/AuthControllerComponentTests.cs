@@ -31,9 +31,7 @@ public class AuthControllerComponentTests : IClassFixture<WebApplicationFactory<
     {
         _testUsername = $"testuser_{Guid.NewGuid():N}";
         
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";
@@ -91,7 +89,6 @@ public class AuthControllerComponentTests : IClassFixture<WebApplicationFactory<
         _client?.Dispose();
     }
 
-    #region Setup and Registration Flow Tests
 
     [Fact]
     public async Task CheckSetup_WithNoUsers_ShouldReturnNeedsSetupTrue()
@@ -218,9 +215,7 @@ public class AuthControllerComponentTests : IClassFixture<WebApplicationFactory<
         content.Should().Contain("User already exists");
     }
 
-    #endregion
 
-    #region Login and Authentication Tests
 
     [Fact]
     public async Task Login_WithValidCredentials_ShouldReturnJwtToken()
@@ -315,9 +310,7 @@ public class AuthControllerComponentTests : IClassFixture<WebApplicationFactory<
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    #endregion
 
-    #region JWT Integration Tests
 
     [Fact]
     public async Task AuthenticatedRequest_WithValidJwt_ShouldAllowAccess()
@@ -378,9 +371,7 @@ public class AuthControllerComponentTests : IClassFixture<WebApplicationFactory<
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    #endregion
 
-    #region Helper Methods
 
     private async Task CreateTestUserAsync(string? username = null, string password = "TestPassword123!")
     {
@@ -423,5 +414,4 @@ public class AuthControllerComponentTests : IClassFixture<WebApplicationFactory<
         return loginResult.GetProperty("access_token").GetString()!;
     }
 
-    #endregion
 }

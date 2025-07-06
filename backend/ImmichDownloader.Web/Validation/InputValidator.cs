@@ -165,8 +165,9 @@ public static class InputValidator
             
         try
         {
-            // Normalize paths
-            var fullPath = Path.GetFullPath(filePath);
+            // Normalize paths - combine filename with base path first
+            var combinedPath = Path.Combine(allowedBasePath, filePath);
+            var fullPath = Path.GetFullPath(combinedPath);
             var basePath = Path.GetFullPath(allowedBasePath);
             
             // Ensure the file path is within the allowed base path

@@ -62,10 +62,14 @@ const Configuration: React.FC = () => {
 
     try {
       await api.saveConfig(config.immich_url, config.api_key);
-      setMessage({ type: 'success', text: 'Configuration saved successfully!' });
+      setMessage({ type: 'success', text: 'Configuration saved successfully! Refreshing application...' });
+      
+      // Force a hard refresh after a brief delay to show the success message
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
     } catch (error) {
       setMessage({ type: 'danger', text: 'Failed to save configuration' });
-    } finally {
       setLoading(false);
     }
   };

@@ -91,7 +91,7 @@ const Home: React.FC = () => {
             <Card.Body>
               {albums.length > 0 ? (
                 <div className="list-group list-group-flush">
-                  {albums.slice(0, 5).map(album => (
+                  {albums.sort((a, b) => a.albumName.localeCompare(b.albumName)).slice(0, 5).map(album => (
                     <div key={album.id} className="list-group-item px-0">
                       <div className="d-flex justify-content-between align-items-center">
                         <div>
