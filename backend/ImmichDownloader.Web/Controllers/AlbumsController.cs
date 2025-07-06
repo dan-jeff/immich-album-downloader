@@ -15,13 +15,12 @@ namespace ImmichDownloader.Web.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize]
-public class AlbumsController : ControllerBase
+public class AlbumsController : SecureControllerBase
 {
     private readonly ApplicationDbContext _context;
     private readonly IImmichService _immichService;
     private readonly IConfiguration _configuration;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ILogger<AlbumsController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AlbumsController"/> class.
@@ -36,13 +35,12 @@ public class AlbumsController : ControllerBase
         IImmichService immichService,
         IConfiguration configuration,
         IHttpClientFactory httpClientFactory,
-        ILogger<AlbumsController> logger)
+        ILogger<AlbumsController> logger) : base(logger)
     {
         _context = context;
         _immichService = immichService;
         _configuration = configuration;
         _httpClientFactory = httpClientFactory;
-        _logger = logger;
     }
 
     /// <summary>
@@ -60,29 +58,32 @@ public class AlbumsController : ControllerBase
         var immichUrl = await GetSettingAsync("Immich:Url");
         var apiKey = await GetSettingAsync("Immich:ApiKey");
         
-        _logger.LogInformation("Fetching albums - URL: '{Url}', API Key set: {ApiKeySet}", 
-            immichUrl, !string.IsNullOrEmpty(apiKey));
+        Logger.LogInformation("Fetching albums for user {Username} - URL: '{Url}', API Key set: {ApiKeySet}", 
+            GetCurrentUsername(), immichUrl, !string.IsNullOrEmpty(apiKey));
 
         if (string.IsNullOrEmpty(immichUrl) || string.IsNullOrEmpty(apiKey))
-            return BadRequest(new { detail = "Configuration not set" });
+        {
+            Logger.LogWarning("Configuration not set for user {Username}", GetCurrentUsername());
+            return CreateErrorResponse(400, "Configuration not set");
+        }
 
         _immichService.Configure(immichUrl, apiKey);
 
         var (success, albums, error) = await _immichService.GetAlbumsAsync();
         if (!success)
         {
-            _logger.LogError("Failed to get albums: {Error}", error);
-            return StatusCode(500, new { detail = error });
+            Logger.LogError("Failed to get albums for user {Username}: {Error}", GetCurrentUsername(), error);
+            return CreateErrorResponse(500, error ?? "Failed to retrieve albums");
         }
 
         // Debug logging to see what ImmichService returned
-        _logger.LogInformation("=== Albums returned from ImmichService ===");
+        Logger.LogInformation("=== Albums returned from ImmichService for user {Username} ===", GetCurrentUsername());
         foreach (var album in albums ?? new List<AlbumModel>())
         {
-            _logger.LogInformation("Album: {AlbumName}, AssetCount: {AssetCount}, AlbumThumbnailAssetId: '{AlbumThumbnailAssetId}'", 
+            Logger.LogInformation("Album: {AlbumName}, AssetCount: {AssetCount}, AlbumThumbnailAssetId: '{AlbumThumbnailAssetId}'", 
                 album.AlbumName, album.AssetCount, album.AlbumThumbnailAssetId ?? "null");
         }
-        _logger.LogInformation("=== End Albums from ImmichService ===");
+        Logger.LogInformation("=== End Albums from ImmichService for user {Username} ===", GetCurrentUsername());
 
         // Sync albums to database
         await SyncAlbumsToDatabase(albums!);
@@ -191,7 +192,7 @@ public class AlbumsController : ControllerBase
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting live stats, returning cached data");
+                Logger.LogError(ex, "Error getting live stats for user {Username}, returning cached data", GetCurrentUsername());
                 // Return cached stats on error
             }
         }
@@ -212,11 +213,22 @@ public class AlbumsController : ControllerBase
     [HttpGet("proxy/thumbnail/{assetId}")]
     public async Task<IActionResult> ProxyThumbnail(string assetId)
     {
+        // Validate asset ID to prevent injection attacks
+        var sanitizedAssetId = ValidateAndSanitizeFileName(assetId, "assetId");
+        if (sanitizedAssetId == null)
+        {
+            Logger.LogWarning("Invalid asset ID '{AssetId}' provided by user {Username}", assetId, GetCurrentUsername());
+            return CreateErrorResponse(400, "Invalid asset ID");
+        }
+
         var immichUrl = await GetSettingAsync("Immich:Url");
         var apiKey = await GetSettingAsync("Immich:ApiKey");
 
         if (string.IsNullOrEmpty(immichUrl) || string.IsNullOrEmpty(apiKey))
-            return BadRequest(new { detail = "Configuration not set" });
+        {
+            Logger.LogWarning("Configuration not set for thumbnail request by user {Username}", GetCurrentUsername());
+            return CreateErrorResponse(400, "Configuration not set");
+        }
 
         try
         {
@@ -224,11 +236,15 @@ public class AlbumsController : ControllerBase
             httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
 
             var baseUrl = immichUrl.EndsWith('/') ? immichUrl : immichUrl + "/";
-            var thumbnailUrl = $"{baseUrl}api/assets/{assetId}/thumbnail?size=preview";
+            var thumbnailUrl = $"{baseUrl}api/assets/{sanitizedAssetId}/thumbnail?size=preview";
 
+            Logger.LogInformation("Proxying thumbnail for asset {AssetId} for user {Username}", sanitizedAssetId, GetCurrentUsername());
             var response = await httpClient.GetAsync(thumbnailUrl);
             if (!response.IsSuccessStatusCode)
-                return NotFound(new { detail = "Thumbnail not found" });
+            {
+                Logger.LogWarning("Thumbnail not found for asset {AssetId}, user {Username}", sanitizedAssetId, GetCurrentUsername());
+                return CreateErrorResponse(404, "Thumbnail not found");
+            }
 
             var content = await response.Content.ReadAsByteArrayAsync();
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
@@ -238,8 +254,8 @@ public class AlbumsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error proxying thumbnail for asset {AssetId}", assetId);
-            return NotFound(new { detail = "Thumbnail not found" });
+            Logger.LogError(ex, "Error proxying thumbnail for asset {AssetId}, user {Username}", sanitizedAssetId, GetCurrentUsername());
+            return CreateErrorResponse(404, "Thumbnail not found");
         }
     }
 

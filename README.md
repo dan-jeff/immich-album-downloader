@@ -48,10 +48,13 @@ Immich Downloader is a powerful web application that allows you to efficiently d
 - **Mobile Optimized**: Touch-friendly interface on all devices
 
 ### 🔐 Security & Administration
-- **JWT Authentication**: Secure API access with configurable tokens
-- **User Management**: Multi-user support with role-based access
-- **Environment Configuration**: Secure secret management
-- **CORS Protection**: Configurable cross-origin policies
+- **JWT Authentication**: Secure API access with configurable token lifetime
+- **User Management**: BCrypt password hashing with comprehensive validation
+- **Environment Configuration**: Secure secret management with .env files
+- **CORS Protection**: Configurable cross-origin policies with security headers
+- **Rate Limiting**: Configurable API rate limiting for protection
+- **Input Validation**: Comprehensive request validation and sanitization
+- **Secure File Operations**: Safe file access with path traversal protection
 
 ## 🖼️ Interface Preview
 
@@ -69,7 +72,14 @@ Immich Downloader is a powerful web application that allows you to efficiently d
 
 ### Mobile Experience
 ![Mobile Dashboard](docs/screenshots/mobile-dashboard.png)
-*Fully responsive design optimized for mobile devices*
+*Mobile-first responsive design with collapsible navigation*
+
+![Mobile Profiles](docs/screenshots/mobile-profiles.png)
+*Touch-optimized profile management on mobile devices*
+
+### Resize Profile Configuration
+![Profile Creation](docs/screenshots/profile-creation.png)
+*Intuitive profile creation with orientation filtering and quality settings*
 
 ## 🚀 Quick Start
 
@@ -163,14 +173,26 @@ dotnet ef database update --project ImmichDownloader.Web
 
 ### Running Tests
 ```bash
-# Backend tests
+# Backend tests (268 tests with 100% pass rate)
 cd backend
 dotnet test
+
+# Run component tests specifically
+dotnet test --filter "Category=ComponentTest"
+
+# Run security tests
+dotnet test --filter "TestCategory=Security"
 
 # Frontend tests  
 cd frontend
 npm test
 ```
+
+#### Test Coverage
+- **Component Tests**: Full E2E testing of API endpoints with authentication
+- **Security Tests**: JWT validation, CORS, input validation, and security headers
+- **Unit Tests**: Individual service and controller testing
+- **Integration Tests**: Database operations and external service mocking
 
 ## 📝 API Documentation
 
@@ -304,13 +326,14 @@ Get all background tasks with progress.
 ### Key Components
 
 **Backend Services:**
-- `StreamingDownloadService`: Memory-efficient download processing
-- `StreamingResizeService`: Image processing with streaming I/O
-- `ImageProcessingService`: EXIF handling and format conversion
-- `TaskProgressService`: Real-time progress notifications
-- `AuthService`: JWT authentication and user management
+- `StreamingDownloadService`: Memory-efficient download processing with disk-based streaming
+- `StreamingResizeService`: Image processing with streaming I/O to prevent memory overflow
+- `ImageProcessingService`: EXIF handling, HEIC support, and format conversion
+- `TaskExecutor`: Background task management with bounded queuing
+- `AuthService`: JWT authentication with BCrypt password hashing
 - `ImmichService`: External API communication with database-stored configuration
-- `ConfigController`: Manages Immich settings persistence in SQLite database
+- `SecureFileService`: Safe file operations with path traversal protection
+- `DatabaseService`: Centralized database operations with proper scoping
 
 **Frontend Components:**
 - `Navigation`: Responsive sidebar with mobile-optimized header layout

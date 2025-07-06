@@ -1,8 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using ImmichDownloader.Web.Data;
 using ImmichDownloader.Web.Models;
 using BCrypt.Net;
@@ -16,17 +12,17 @@ namespace ImmichDownloader.Web.Services;
 public class AuthService : IAuthService
 {
     private readonly ApplicationDbContext _context;
-    private readonly IConfiguration _configuration;
+    private readonly IJwtService _jwtService;
 
     /// <summary>
     /// Initializes a new instance of the AuthService class.
     /// </summary>
     /// <param name="context">The database context for user data operations.</param>
-    /// <param name="configuration">The configuration provider for JWT settings.</param>
-    public AuthService(ApplicationDbContext context, IConfiguration configuration)
+    /// <param name="jwtService">The JWT service for secure token operations.</param>
+    public AuthService(ApplicationDbContext context, IJwtService jwtService)
     {
         _context = context;
-        _configuration = configuration;
+        _jwtService = jwtService;
     }
 
     /// <summary>
@@ -55,6 +51,23 @@ public class AuthService : IAuthService
     /// <exception cref="Exception">Thrown when the database operation fails.</exception>
     public async Task<bool> CreateUserAsync(string username, string password)
     {
+        // Input validation
+        if (string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("Username cannot be null or empty", nameof(username));
+        
+        if (string.IsNullOrWhiteSpace(password))
+            throw new ArgumentException("Password cannot be null or empty", nameof(password));
+        
+        // Additional security validations
+        if (username.Length < 3 || username.Length > 50)
+            throw new ArgumentException("Username must be between 3 and 50 characters", nameof(username));
+            
+        if (password.Length < 8)
+            throw new ArgumentException("Password must be at least 8 characters", nameof(password));
+            
+        if (password.Length > 128)
+            throw new ArgumentException("Password must be no more than 128 characters", nameof(password));
+
         if (await _context.Users.AnyAsync(u => u.Username == username))
             return false;
 
@@ -84,12 +97,31 @@ public class AuthService : IAuthService
     /// <exception cref="Exception">Thrown when the database query or token generation fails.</exception>
     public async Task<string?> AuthenticateAsync(string username, string password)
     {
+        // Input validation
+        if (string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("Username cannot be null or empty", nameof(username));
+        
+        if (string.IsNullOrWhiteSpace(password))
+            throw new ArgumentException("Password cannot be null or empty", nameof(password));
+
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
         
-        if (user == null || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+        if (user == null)
             return null;
+            
+        try
+        {
+            if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+                return null;
+        }
+        catch (Exception)
+        {
+            // BCrypt.Verify can throw exceptions with corrupted hashes
+            // Return null for authentication failure in such cases
+            return null;
+        }
 
-        return GenerateJwtToken(user);
+        return _jwtService.GenerateToken(user.Id, user.Username);
     }
 
     /// <summary>
@@ -110,38 +142,16 @@ public class AuthService : IAuthService
         if (user == null)
             return false;
 
-        return BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
-    }
-
-    /// <summary>
-    /// Generates a JWT token for the specified user.
-    /// The token includes the user's username and ID as claims, and is signed using the configured secret key.
-    /// </summary>
-    /// <param name="user">The user for whom to generate the token.</param>
-    /// <returns>A JWT token string that can be used for authentication.</returns>
-    /// <exception cref="ArgumentException">Thrown when the JWT configuration is invalid.</exception>
-    /// <exception cref="Exception">Thrown when token generation fails.</exception>
-    private string GenerateJwtToken(User user)
-    {
-        var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"] ?? "your-secret-key");
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var tokenDescriptor = new SecurityTokenDescriptor
+        try
         {
-            Subject = new ClaimsIdentity(new[]
-            {
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
-            }),
-            Expires = DateTime.UtcNow.AddMinutes(
-                int.Parse(_configuration["Jwt:ExpireMinutes"] ?? "30")),
-            Issuer = _configuration["Jwt:Issuer"],
-            Audience = _configuration["Jwt:Audience"],
-            SigningCredentials = new SigningCredentials(
-                new SymmetricSecurityKey(key), 
-                SecurityAlgorithms.HmacSha256Signature)
-        };
-
-        var token = tokenHandler.CreateToken(tokenDescriptor);
-        return tokenHandler.WriteToken(token);
+            return BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
+        }
+        catch (Exception)
+        {
+            // BCrypt.Verify can throw exceptions with corrupted hashes
+            // Return false for verification failure in such cases
+            return false;
+        }
     }
+
 }

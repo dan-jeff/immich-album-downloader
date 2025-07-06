@@ -1,0 +1,85 @@
+name: Test Automation Pipeline
+
+on:
+  push:
+    branches: [ main, component-testing ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        dotnet-version: ['9.0.x']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ matrix.dotnet-version }}
+    
+    - name: Restore dependencies
+      run: dotnet restore
+      working-directory: ./backend
+    
+    - name: Build project
+      run: dotnet build --no-restore --configuration Release
+      working-directory: ./backend
+    
+    - name: Run security tests
+      run: dotnet test --no-build --configuration Release --filter "Category=Security" --verbosity normal
+      working-directory: ./backend
+    
+    - name: Run component tests  
+      run: dotnet test --no-build --configuration Release --filter "Category=Component" --verbosity normal
+      working-directory: ./backend
+    
+    - name: Run all tests
+      run: dotnet test --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage"
+      working-directory: ./backend
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      with:
+        directory: ./backend/TestResults
+        fail_ci_if_error: false
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run security scan
+      uses: github/super-linter/slim@v5
+      env:
+        DEFAULT_BRANCH: main
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VALIDATE_CSHARP: true
+        VALIDATE_DOCKERFILE: true
+        VALIDATE_YAML: true
+
+  performance-check:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+    
+    - name: Build for performance testing
+      run: dotnet build --configuration Release
+      working-directory: ./backend
+    
+    - name: Basic performance validation
+      run: |
+        echo "Performance validation would run here"
+        echo "✓ Build completed successfully in Release mode"

@@ -2,6 +2,8 @@ using System.IO.Compression;
 using ImmichDownloader.Web.Models;
 using ImmichDownloader.Web.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
+using ImmichDownloader.Web.Hubs;
 
 namespace ImmichDownloader.Web.Services;
 
@@ -37,7 +39,7 @@ public class StreamingResizeService : IStreamingResizeService
     private readonly ILogger<StreamingResizeService> _logger;
     private readonly IImageProcessingService _imageProcessingService;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ITaskProgressService _progressService;
+    private readonly IHubContext<ProgressHub> _hubContext;
     private readonly string _resizedPath;
 
     /// <summary>
@@ -46,19 +48,19 @@ public class StreamingResizeService : IStreamingResizeService
     /// <param name="logger">Logger instance for logging operations and errors.</param>
     /// <param name="imageProcessingService">Service for processing and resizing images.</param>
     /// <param name="scopeFactory">Factory for creating service scopes for database operations.</param>
-    /// <param name="progressService">Service for tracking and notifying about task progress.</param>
+    /// <param name="hubContext">SignalR hub context for progress notifications.</param>
     /// <param name="configuration">Configuration provider for accessing application settings.</param>
     public StreamingResizeService(
         ILogger<StreamingResizeService> logger,
         IImageProcessingService imageProcessingService,
         IServiceScopeFactory scopeFactory,
-        ITaskProgressService progressService,
+        IHubContext<ProgressHub> hubContext,
         IConfiguration configuration)
     {
         _logger = logger;
         _imageProcessingService = imageProcessingService;
         _scopeFactory = scopeFactory;
-        _progressService = progressService;
+        _hubContext = hubContext;
         _resizedPath = Path.Combine(configuration.GetValue<string>("DataPath") ?? "data", "resized");
         
         // Ensure resized directory exists
@@ -81,7 +83,7 @@ public class StreamingResizeService : IStreamingResizeService
             _logger.LogInformation("Starting streaming resize for album {AlbumId} with profile {ProfileId}, task {TaskId}", 
                 downloadedAlbumId, profileId, taskId);
 
-            await _progressService.NotifyProgressAsync(taskId, TaskType.Resize, Models.TaskStatus.InProgress);
+            await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, "Starting resize...");
 
             // Get album and profile data
             var (album, profile) = await GetAlbumAndProfileAsync(downloadedAlbumId, profileId);
@@ -172,8 +174,8 @@ public class StreamingResizeService : IStreamingResizeService
                             {
                                 await UpdateTaskAsync(taskId, Models.TaskStatus.InProgress, 
                                     $"Processed {processedCount}/{totalFiles} images", processedCount, totalFiles);
-                                await _progressService.NotifyProgressAsync(taskId, TaskType.Resize, 
-                                    Models.TaskStatus.InProgress, processedCount, totalFiles);
+                                await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, 
+                                    $"Resized {processedCount}/{totalFiles} images", processedCount, totalFiles);
                             }
                         }
                         catch (Exception ex)
@@ -189,7 +191,7 @@ public class StreamingResizeService : IStreamingResizeService
                 await UpdateTaskAsync(taskId, Models.TaskStatus.Completed, "Resize complete!", 
                     processedCount, totalFiles, outputZipPath, fileInfo.Length, processedCount);
 
-                await _progressService.NotifyTaskCompletedAsync(taskId, TaskType.Resize);
+                await NotifyProgressAsync(taskId, Models.TaskStatus.Completed, "Resize complete!");
 
                 _logger.LogInformation("Completed streaming resize for task {TaskId}, processed {Count} images", 
                     taskId, processedCount);
@@ -301,5 +303,27 @@ public class StreamingResizeService : IStreamingResizeService
         }
         
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Notifies connected clients about task progress via SignalR.
+    /// </summary>
+    private async Task NotifyProgressAsync(string taskId, Models.TaskStatus status, string? message = null, int? progress = null, int? total = null)
+    {
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("TaskStatusUpdated", new
+            {
+                taskId,
+                status = status.ToString().ToLowerInvariant(),
+                message,
+                progress,
+                total
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending progress notification for task {TaskId}", taskId);
+        }
     }
 }

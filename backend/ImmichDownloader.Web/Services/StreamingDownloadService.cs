@@ -3,6 +3,8 @@ using System.Collections.Concurrent;
 using ImmichDownloader.Web.Models;
 using ImmichDownloader.Web.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
+using ImmichDownloader.Web.Hubs;
 
 namespace ImmichDownloader.Web.Services;
 
@@ -45,7 +47,7 @@ public class StreamingDownloadService : IStreamingDownloadService
     private readonly ILogger<StreamingDownloadService> _logger;
     private readonly IImmichService _immichService;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ITaskProgressService _progressService;
+    private readonly IHubContext<ProgressHub> _hubContext;
     private readonly string _downloadsPath;
     
     private const int CHUNK_SIZE = 50; // Process 50 images at a time
@@ -57,19 +59,19 @@ public class StreamingDownloadService : IStreamingDownloadService
     /// <param name="logger">Logger instance for logging operations and errors.</param>
     /// <param name="immichService">Service for communicating with Immich server.</param>
     /// <param name="scopeFactory">Factory for creating service scopes for database operations.</param>
-    /// <param name="progressService">Service for tracking and notifying about task progress.</param>
+    /// <param name="hubContext">SignalR hub context for progress notifications.</param>
     /// <param name="configuration">Configuration provider for accessing application settings.</param>
     public StreamingDownloadService(
         ILogger<StreamingDownloadService> logger,
         IImmichService immichService,
         IServiceScopeFactory scopeFactory,
-        ITaskProgressService progressService,
+        IHubContext<ProgressHub> hubContext,
         IConfiguration configuration)
     {
         _logger = logger;
         _immichService = immichService;
         _scopeFactory = scopeFactory;
-        _progressService = progressService;
+        _hubContext = hubContext;
         _downloadsPath = Path.Combine(configuration.GetValue<string>("DataPath") ?? "data", "downloads");
         
         // Ensure downloads directory exists
@@ -90,7 +92,7 @@ public class StreamingDownloadService : IStreamingDownloadService
         try
         {
             _logger.LogInformation("Starting streaming download for album {AlbumId}, task {TaskId}", albumId, taskId);
-            await _progressService.NotifyProgressAsync(taskId, TaskType.Download, Models.TaskStatus.InProgress);
+            await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, "Starting download...");
 
             // Configure Immich service with database settings
             var (immichUrl, apiKey) = await GetImmichSettingsAsync();
@@ -123,7 +125,20 @@ public class StreamingDownloadService : IStreamingDownloadService
 
             if (toDownload == 0)
             {
-                await UpdateTaskAsync(taskId, Models.TaskStatus.Completed, "All photos already downloaded");
+                // Create empty ZIP file for empty albums
+                var emptyZipFilePath = Path.Combine(_downloadsPath, $"{taskId}.zip");
+                using (var zipFileStream = new FileStream(emptyZipFilePath, FileMode.Create, FileAccess.Write))
+                using (var zipArchive = new ZipArchive(zipFileStream, ZipArchiveMode.Create, false))
+                {
+                    // Create empty ZIP - no entries needed
+                }
+                
+                // Save album metadata with 0 photos
+                await SaveDownloadedAlbumAsync(albumId, albumName, 0, emptyZipFilePath);
+                await UpdateTaskAsync(taskId, Models.TaskStatus.Completed, "All photos already downloaded", 0, 0);
+                await NotifyProgressAsync(taskId, Models.TaskStatus.Completed, "Download complete!");
+                
+                _logger.LogInformation("Completed download for empty album {AlbumId}", albumId);
                 return;
             }
 
@@ -171,8 +186,8 @@ public class StreamingDownloadService : IStreamingDownloadService
                                 {
                                     await UpdateTaskAsync(taskId, Models.TaskStatus.InProgress, 
                                         $"Downloaded {downloadedCount}/{toDownload} photos", downloadedCount, toDownload);
-                                    await _progressService.NotifyProgressAsync(taskId, TaskType.Download, 
-                                        Models.TaskStatus.InProgress, downloadedCount, toDownload);
+                                    await NotifyProgressAsync(taskId, Models.TaskStatus.InProgress, 
+                                        $"Downloaded {downloadedCount}/{toDownload} photos", downloadedCount, toDownload);
                                 }
                             }
                             else
@@ -199,7 +214,7 @@ public class StreamingDownloadService : IStreamingDownloadService
 
             // Final update
             await UpdateTaskAsync(taskId, Models.TaskStatus.Completed, "Download complete!", downloadedCount, toDownload);
-            await _progressService.NotifyTaskCompletedAsync(taskId, TaskType.Download);
+            await NotifyProgressAsync(taskId, Models.TaskStatus.Completed, "Download complete!");
 
             _logger.LogInformation("Completed streaming download for album {AlbumId}, downloaded {Count} photos", 
                 albumId, downloadedCount);
@@ -425,6 +440,28 @@ public class StreamingDownloadService : IStreamingDownloadService
         {
             _logger.LogError(ex, "Error retrieving Immich settings from database");
             return (null, null);
+        }
+    }
+
+    /// <summary>
+    /// Notifies connected clients about task progress via SignalR.
+    /// </summary>
+    private async Task NotifyProgressAsync(string taskId, Models.TaskStatus status, string? message = null, int? progress = null, int? total = null)
+    {
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("TaskStatusUpdated", new
+            {
+                taskId,
+                status = status.ToString().ToLowerInvariant(),
+                message,
+                progress,
+                total
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending progress notification for task {TaskId}", taskId);
         }
     }
 }

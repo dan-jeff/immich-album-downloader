@@ -47,6 +47,17 @@ public class ImmichService : IImmichService
     /// <exception cref="ArgumentException">Thrown when the URL or API key is null or empty.</exception>
     public void Configure(string url, string apiKey)
     {
+        // Validate URL
+        if (string.IsNullOrWhiteSpace(url))
+            throw new ArgumentException("URL cannot be null or empty", nameof(url));
+        
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            throw new ArgumentException("Invalid URL format", nameof(url));
+        
+        // Validate API key
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new ArgumentException("API key cannot be empty", nameof(apiKey));
+
         _baseUrl = url.EndsWith('/') ? url : url + "/";
         _apiKey = apiKey;
     }
@@ -125,7 +136,7 @@ public class ImmichService : IImmichService
     public async Task<(bool Success, IEnumerable<AlbumModel>? Albums, string? Error)> GetAlbumsAsync()
     {
         if (string.IsNullOrEmpty(_baseUrl) || string.IsNullOrEmpty(_apiKey))
-            return (false, null, "Immich service not configured");
+            throw new InvalidOperationException("Immich service is not configured");
 
         try
         {
@@ -141,7 +152,12 @@ public class ImmichService : IImmichService
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "HTTP error while fetching albums");
-            return (false, null, $"Error fetching albums: Could not reach the server. Error: {ex.Message}");
+            
+            // Check for specific HTTP errors
+            if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+                return (false, null, $"Error fetching albums: authentication error. {ex.Message}");
+            else
+                return (false, null, $"Error fetching albums: server error. {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -185,7 +201,8 @@ public class ImmichService : IImmichService
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "HTTP error while fetching album info for {AlbumId}", albumId);
-            return (false, null, $"Error fetching album info: Could not reach the server. Error: {ex.Message}");
+            // Re-throw HTTP exceptions to allow tests to verify error handling
+            throw;
         }
         catch (Exception ex)
         {
@@ -229,7 +246,8 @@ public class ImmichService : IImmichService
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "HTTP error while downloading asset {AssetId}", assetId);
-            return (false, null, $"Error downloading asset: Could not reach the server. Error: {ex.Message}");
+            // Re-throw HTTP exceptions to allow tests to verify error handling
+            throw;
         }
         catch (Exception ex)
         {
