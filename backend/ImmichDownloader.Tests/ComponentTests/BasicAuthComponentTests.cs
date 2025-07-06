@@ -31,9 +31,7 @@ public class BasicAuthComponentTests : IClassFixture<WebApplicationFactory<Progr
     {
         _testUsername = $"testuser_{Guid.NewGuid():N}";
         
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";

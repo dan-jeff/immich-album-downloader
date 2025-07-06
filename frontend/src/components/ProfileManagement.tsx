@@ -14,6 +14,7 @@ const ProfileManagement: React.FC = () => {
     height: 1080,
     include_horizontal: true,
     include_vertical: true,
+    quality: 85,
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'danger'; text: string } | null>(null);
@@ -42,6 +43,7 @@ const ProfileManagement: React.FC = () => {
       height: 1080,
       include_horizontal: true,
       include_vertical: true,
+      quality: 85,
     });
     setShowModal(true);
   };
@@ -54,6 +56,7 @@ const ProfileManagement: React.FC = () => {
       height: profile.height,
       include_horizontal: profile.include_horizontal,
       include_vertical: profile.include_vertical,
+      quality: profile.quality || 85,
     });
     setShowModal(true);
   };
@@ -147,6 +150,7 @@ const ProfileManagement: React.FC = () => {
                       <th>Name</th>
                       <th>Dimensions</th>
                       <th>Orientation</th>
+                      <th>Quality</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -164,6 +168,7 @@ const ProfileManagement: React.FC = () => {
                             ? 'Vertical'
                             : 'None'}
                         </td>
+                        <td>{profile.quality || 85}%</td>
                         <td>
                           <div className="d-flex gap-2">
                             <Button
@@ -198,11 +203,11 @@ const ProfileManagement: React.FC = () => {
                       </div>
                       
                       <div className="row mb-3">
-                        <div className="col-6">
+                        <div className="col-4">
                           <small className="text-muted">Dimensions</small>
                           <div>{profile.width} x {profile.height}px</div>
                         </div>
-                        <div className="col-6">
+                        <div className="col-4">
                           <small className="text-muted">Orientation</small>
                           <div>
                             {profile.include_horizontal && profile.include_vertical
@@ -213,6 +218,10 @@ const ProfileManagement: React.FC = () => {
                               ? 'Vertical'
                               : 'None'}
                           </div>
+                        </div>
+                        <div className="col-4">
+                          <small className="text-muted">Quality</small>
+                          <div>{profile.quality || 85}%</div>
                         </div>
                       </div>
                       
@@ -286,6 +295,20 @@ const ProfileManagement: React.FC = () => {
                     onChange={(e) => handleInputChange('height', parseInt(e.target.value))}
                     required
                   />
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Quality ({formData.quality || 85}%)</Form.Label>
+                  <Form.Range
+                    min="1"
+                    max="100"
+                    value={formData.quality || 85}
+                    onChange={(e) => handleInputChange('quality', parseInt(e.target.value))}
+                  />
+                  <Form.Text className="text-muted">
+                    Image quality for JPEG output. Higher values mean better quality but larger files.
+                  </Form.Text>
                 </Form.Group>
               </Col>
             </Row>

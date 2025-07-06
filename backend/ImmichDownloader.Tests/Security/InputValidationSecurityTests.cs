@@ -26,9 +26,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
 
     public InputValidationSecurityTests(WebApplicationFactory<Program> factory)
     {
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";
@@ -63,7 +61,6 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         _client = _factory.CreateClient();
     }
 
-    #region SQL Injection Prevention Tests
 
     [Theory]
     [InlineData("'; DROP TABLE users; --")]
@@ -128,9 +125,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         }
     }
 
-    #endregion
 
-    #region XSS Prevention Tests
 
     [Theory]
     [InlineData("<script>alert('xss')</script>")]
@@ -184,9 +179,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         content.Should().Contain("Invalid URL format");
     }
 
-    #endregion
 
-    #region Path Traversal Prevention Tests
 
     [Theory]
     [InlineData("../../../etc/passwd")]
@@ -215,9 +208,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         }
     }
 
-    #endregion
 
-    #region Input Length and Format Validation Tests
 
     [Fact]
     public async Task Register_WithExcessivelyLongUsername_ShouldReject()
@@ -276,9 +267,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    #endregion
 
-    #region Content Type Validation Tests
 
     [Fact]
     public async Task AuthEndpoints_WithInvalidContentType_ShouldReject()
@@ -324,9 +313,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.UnprocessableEntity);
     }
 
-    #endregion
 
-    #region Rate Limiting Validation Tests
 
     [Fact]
     public async Task Login_WithRepeatedFailedAttempts_ShouldImplementRateLimiting()
@@ -349,9 +336,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         rateLimitedResponses.Should().NotBeEmpty("Rate limiting should activate after repeated failed attempts");
     }
 
-    #endregion
 
-    #region Data Sanitization Tests
 
     [Theory]
     [InlineData("user<script>")]
@@ -414,9 +399,7 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    #endregion
 
-    #region Helper Methods
 
     private async Task CreateTestUserAsync()
     {
@@ -448,7 +431,6 @@ public class InputValidationSecurityTests : IClassFixture<WebApplicationFactory<
         return loginResult.GetProperty("access_token").GetString()!;
     }
 
-    #endregion
 
     public void Dispose()
     {

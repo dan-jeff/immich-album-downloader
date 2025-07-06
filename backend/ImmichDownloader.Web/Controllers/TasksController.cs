@@ -222,8 +222,8 @@ public class TasksController : SecureControllerBase
                           album_name = td.Album.AlbumName,
                           profile_name = p.Name,
                           processed_count = td.Task.ProcessedCount,
-                          total_size = td.Task.ZipSize,
-                          zip_size = td.Task.ZipSize,
+                          total_size = td.Task.FileSize,
+                          zip_size = td.Task.FileSize,
                           created_at = td.Task.CreatedAt,
                           status = "completed"
                       })
@@ -246,16 +246,31 @@ public class TasksController : SecureControllerBase
     [HttpGet("downloads/{taskId}")]
     public async Task<IActionResult> DownloadZip(string taskId)
     {
+        Logger.LogError("DEBUG: DownloadZip called for task {TaskId} by user {Username}", taskId, GetCurrentUsername());
+        
         // Validate task ID
         if (!ValidateTaskId(taskId))
             return BadRequest(ModelState);
 
-        var task = await _databaseService.ExecuteWithScopeAsync(async context =>
+        var taskWithDetails = await _databaseService.ExecuteWithScopeAsync(async context =>
         {
             return await context.BackgroundTasks
                 .AsNoTracking()
-                .FirstOrDefaultAsync(t => t.Id == taskId && t.Status == Models.TaskStatus.Completed);
+                .Where(t => t.Id == taskId && t.Status == Models.TaskStatus.Completed)
+                .Select(t => new {
+                    Task = t,
+                    AlbumName = t.TaskType == TaskType.Download ? t.AlbumName :
+                        context.DownloadedAlbums.Where(da => da.Id == t.DownloadedAlbumId).Select(da => da.AlbumName).FirstOrDefault(),
+                    ProfileName = t.TaskType == TaskType.Resize ? 
+                        context.ResizeProfiles.Where(rp => rp.Id == t.ProfileId).Select(rp => rp.Name).FirstOrDefault() : null
+                })
+                .FirstOrDefaultAsync();
         });
+
+        var task = taskWithDetails?.Task;
+
+        Logger.LogError("DEBUG: Task query result for {TaskId}: Found={TaskFound}, TaskType={TaskType}, FilePath='{FilePath}'", 
+            taskId, task != null, task?.TaskType, task?.FilePath);
 
         if (task == null)
         {
@@ -266,17 +281,40 @@ public class TasksController : SecureControllerBase
         // Support both streaming (FilePath) and legacy (ZipData) modes
         if (!string.IsNullOrEmpty(task.FilePath))
         {
-            // Use secure file service to validate and access the file
-            var downloadDir = _secureFileService.GetDownloadDirectory();
+            // Use the appropriate directory and file path based on task type
+            string baseDir;
+            string filePath;
             
-            if (_secureFileService.FileExists(task.FilePath, downloadDir))
+            if (task.TaskType == TaskType.Resize)
+            {
+                baseDir = Path.Combine(Path.GetDirectoryName(_secureFileService.GetDownloadDirectory())!, "resized");
+                // Extract just the filename from the stored path for resize tasks
+                filePath = Path.GetFileName(task.FilePath);
+                Logger.LogInformation("Resize task {TaskId}: Using baseDir='{BaseDir}', filePath='{FilePath}' (extracted from '{OriginalPath}')", 
+                    taskId, baseDir, filePath, task.FilePath);
+            }
+            else
+            {
+                baseDir = _secureFileService.GetDownloadDirectory();
+                filePath = task.FilePath;
+                Logger.LogInformation("Download task {TaskId}: Using baseDir='{BaseDir}', filePath='{FilePath}'", 
+                    taskId, baseDir, filePath);
+            }
+            
+            var fileExists = _secureFileService.FileExists(filePath, baseDir);
+            Logger.LogInformation("File existence check for '{FilePath}' in baseDir '{BaseDir}': {FileExists}", 
+                filePath, baseDir, fileExists);
+            
+            if (fileExists)
             {
                 try
                 {
                     // Streaming mode - return secure file stream
-                    var fileStream = _secureFileService.OpenFileStream(task.FilePath, downloadDir, 
+                    var fileStream = _secureFileService.OpenFileStream(filePath, baseDir, 
                         FileMode.Open, FileAccess.Read, FileShare.Read);
-                    var fileName = task.TaskType == TaskType.Download ? $"download_{taskId}.zip" : $"resized_{taskId}.zip";
+                    
+                    // Generate descriptive filename with album name and profile
+                    var fileName = GenerateDownloadFilename(task.TaskType, taskWithDetails?.AlbumName, taskWithDetails?.ProfileName, taskId);
                     
                     Logger.LogInformation("Serving secure download file {FileName} for task {TaskId} to user {Username}", 
                         fileName, taskId, GetCurrentUsername());
@@ -293,7 +331,7 @@ public class TasksController : SecureControllerBase
         else if (task.ZipData != null)
         {
             // Legacy mode - return byte array
-            var fileName = task.TaskType == TaskType.Download ? $"download_{taskId}.zip" : $"resized_{taskId}.zip";
+            var fileName = GenerateDownloadFilename(task.TaskType, taskWithDetails?.AlbumName, taskWithDetails?.ProfileName, taskId);
             Logger.LogInformation("Serving legacy download {FileName} for task {TaskId} to user {Username}", 
                 fileName, taskId, GetCurrentUsername());
             return File(task.ZipData, "application/zip", fileName);
@@ -335,8 +373,23 @@ public class TasksController : SecureControllerBase
         {
             try
             {
-                var downloadDir = _secureFileService.GetDownloadDirectory();
-                var deleted = _secureFileService.DeleteFile(task.FilePath, downloadDir);
+                // Use the appropriate directory and file path based on task type
+                string baseDir;
+                string filePath;
+                
+                if (task.TaskType == TaskType.Resize)
+                {
+                    baseDir = Path.Combine(Path.GetDirectoryName(_secureFileService.GetDownloadDirectory())!, "resized");
+                    // Extract just the filename from the stored path for resize tasks
+                    filePath = Path.GetFileName(task.FilePath);
+                }
+                else
+                {
+                    baseDir = _secureFileService.GetDownloadDirectory();
+                    filePath = task.FilePath;
+                }
+                
+                var deleted = _secureFileService.DeleteFile(filePath, baseDir);
                 
                 if (deleted)
                 {
@@ -420,5 +473,66 @@ public class TasksController : SecureControllerBase
                 taskId, GetCurrentUsername(), ex.Message);
             return CreateErrorResponse(500, "Failed to delete task", new { error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Generates a descriptive filename for download ZIP files.
+    /// </summary>
+    /// <param name="taskType">The type of task (Download or Resize).</param>
+    /// <param name="albumName">The name of the album.</param>
+    /// <param name="profileName">The name of the resize profile (for resize tasks).</param>
+    /// <param name="taskId">The task ID as fallback.</param>
+    /// <returns>A sanitized filename for the ZIP download.</returns>
+    private string GenerateDownloadFilename(TaskType taskType, string? albumName, string? profileName, string taskId)
+    {
+        var sanitizedAlbumName = SanitizeFilename(albumName) ?? "Unknown_Album";
+        
+        if (taskType == TaskType.Resize && !string.IsNullOrEmpty(profileName))
+        {
+            var sanitizedProfileName = SanitizeFilename(profileName) ?? "Unknown_Profile";
+            return $"{sanitizedAlbumName}_{sanitizedProfileName}.zip";
+        }
+        else if (taskType == TaskType.Download)
+        {
+            return $"{sanitizedAlbumName}_Original.zip";
+        }
+        
+        // Fallback to old naming scheme
+        return taskType == TaskType.Download ? $"download_{taskId}.zip" : $"resized_{taskId}.zip";
+    }
+
+    /// <summary>
+    /// Sanitizes a string to be safe for use as a filename.
+    /// </summary>
+    /// <param name="input">The input string to sanitize.</param>
+    /// <returns>A sanitized filename or null if input is null/empty.</returns>
+    private string? SanitizeFilename(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return null;
+
+        // Remove or replace invalid filename characters
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = input;
+        
+        foreach (var invalidChar in invalidChars)
+        {
+            sanitized = sanitized.Replace(invalidChar, '_');
+        }
+        
+        // Replace common problematic characters
+        sanitized = sanitized
+            .Replace(' ', '_')           // Spaces to underscores
+            .Replace(".", "_")           // Dots to underscores (except for extension)
+            .Replace(",", "_")           // Commas to underscores
+            .Replace("'", "")            // Remove apostrophes
+            .Replace("\"", "")           // Remove quotes
+            .Trim('_');                  // Remove leading/trailing underscores
+        
+        // Limit length and ensure it's not empty
+        if (sanitized.Length > 50)
+            sanitized = sanitized.Substring(0, 50).Trim('_');
+            
+        return string.IsNullOrEmpty(sanitized) ? null : sanitized;
     }
 }

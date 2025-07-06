@@ -30,9 +30,7 @@ public class JwtSecurityTests : IClassFixture<WebApplicationFactory<Program>>, I
 
     public JwtSecurityTests(WebApplicationFactory<Program> factory)
     {
-        // Set JWT configuration for testing
-        Environment.SetEnvironmentVariable("JWT_SECRET_KEY", "test-jwt-key-for-component-testing-shared-across-all-tests");
-        Environment.SetEnvironmentVariable("JWT_SKIP_VALIDATION", "true");
+        // JWT configuration is set globally in TestSetup.cs
         
         // Create and keep open SQLite in-memory connection with unique name for test isolation
         var uniqueDbName = $"TestDb_{GetType().Name}_{Guid.NewGuid():N}";
@@ -67,7 +65,6 @@ public class JwtSecurityTests : IClassFixture<WebApplicationFactory<Program>>, I
         _client = _factory.CreateClient();
     }
 
-    #region JWT Token Validation Tests
 
     [Fact]
     public async Task AuthenticatedEndpoint_WithValidToken_ShouldReturn200()
@@ -155,9 +152,7 @@ public class JwtSecurityTests : IClassFixture<WebApplicationFactory<Program>>, I
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    #endregion
 
-    #region JWT Claims Validation Tests
 
     [Fact]
     public void JwtService_GenerateToken_ShouldIncludeRequiredClaims()
@@ -240,9 +235,7 @@ public class JwtSecurityTests : IClassFixture<WebApplicationFactory<Program>>, I
         result.Should().BeNull();
     }
 
-    #endregion
 
-    #region Token Security Tests
 
     [Fact]
     public async Task Login_ShouldGenerateUniqueTokens()
@@ -298,9 +291,7 @@ public class JwtSecurityTests : IClassFixture<WebApplicationFactory<Program>>, I
         jsonToken.Header.Alg.Should().Be(SecurityAlgorithms.HmacSha256);
     }
 
-    #endregion
 
-    #region Authentication Flow Security Tests
 
     [Fact]
     public async Task Login_WithInvalidCredentials_ShouldNotRevealUserExistence()
@@ -363,9 +354,7 @@ public class JwtSecurityTests : IClassFixture<WebApplicationFactory<Program>>, I
         content.Should().Contain("already exists");
     }
 
-    #endregion
 
-    #region Helper Methods
 
     private async Task CreateTestUserAsync()
     {
@@ -433,7 +422,6 @@ public class JwtSecurityTests : IClassFixture<WebApplicationFactory<Program>>, I
         return $"{parts[0]}.{parts[1]}.{tamperedSignature}";
     }
 
-    #endregion
 
     public void Dispose()
     {

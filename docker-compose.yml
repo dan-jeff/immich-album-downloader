@@ -8,6 +8,7 @@ services:
       - ASPNETCORE_URLS=http://+:5000
       - ConnectionStrings__DefaultConnection=Data Source=/app/data/immich_downloader.db
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - JWT_SKIP_VALIDATION=true
       - Jwt__Issuer=${JWT_ISSUER:-ImmichDownloader}
       - Jwt__Audience=${JWT_AUDIENCE:-ImmichDownloader}
       - Jwt__TokenLifetimeHours=${JWT_TOKEN_LIFETIME_HOURS:-24}
@@ -39,14 +40,6 @@ services:
     depends_on:
       - frontend
       - backend
-    restart: unless-stopped
-
-  test-server:
-    image: nginx:alpine
-    ports:
-      - "3001:80"
-    volumes:
-      - ./test:/usr/share/nginx/html:ro
     restart: unless-stopped
 
 volumes:

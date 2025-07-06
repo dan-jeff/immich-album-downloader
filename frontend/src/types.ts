@@ -25,6 +25,7 @@ export interface ResizeProfile {
   height: number;
   include_horizontal: boolean;
   include_vertical: boolean;
+  quality?: number;
   created_at?: string;
 }
 
