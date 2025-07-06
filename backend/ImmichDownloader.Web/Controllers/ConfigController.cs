@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using ImmichDownloader.Web.Data;
 using ImmichDownloader.Web.Models;
 using ImmichDownloader.Web.Models.Requests;
 using ImmichDownloader.Web.Services;
+using ImmichDownloader.Web.Services.Database;
 
 namespace ImmichDownloader.Web.Controllers;
 
@@ -15,26 +15,28 @@ namespace ImmichDownloader.Web.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize]
-public class ConfigController : ControllerBase
+public class ConfigController : SecureControllerBase
 {
-    private readonly ApplicationDbContext _context;
+    private readonly IConfigurationService _configurationService;
     private readonly IImmichService _immichService;
-    private readonly IConfiguration _configuration;
+    private readonly IDatabaseService _databaseService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConfigController"/> class.
     /// </summary>
-    /// <param name="context">The database context for configuration operations.</param>
+    /// <param name="configurationService">The centralized configuration service.</param>
     /// <param name="immichService">The Immich service for server connectivity.</param>
-    /// <param name="configuration">The application configuration provider.</param>
+    /// <param name="databaseService">The centralized database service.</param>
+    /// <param name="logger">The logger for security monitoring.</param>
     public ConfigController(
-        ApplicationDbContext context, 
+        IConfigurationService configurationService, 
         IImmichService immichService,
-        IConfiguration configuration)
+        IDatabaseService databaseService,
+        ILogger<ConfigController> logger) : base(logger)
     {
-        _context = context;
+        _configurationService = configurationService;
         _immichService = immichService;
-        _configuration = configuration;
+        _databaseService = databaseService;
     }
 
     /// <summary>
@@ -46,14 +48,19 @@ public class ConfigController : ControllerBase
     [HttpGet("config")]
     public async Task<IActionResult> GetConfig()
     {
-        var immichUrl = await GetSettingAsync("Immich:Url") ?? "";
-        var apiKey = await GetSettingAsync("Immich:ApiKey") ?? "";
-        var profiles = await _context.ResizeProfiles.OrderByDescending(p => p.CreatedAt).ToListAsync();
+        var (immichUrl, apiKey) = await _configurationService.GetImmichSettingsAsync();
+        var profiles = await _databaseService.ExecuteWithScopeAsync(async context =>
+        {
+            return await context.ResizeProfiles
+                .AsNoTracking()
+                .OrderByDescending(p => p.CreatedAt)
+                .ToListAsync();
+        });
 
         return Ok(new
         {
-            immich_url = immichUrl,
-            api_key = apiKey,
+            immich_url = immichUrl ?? "",
+            api_key = apiKey ?? "",
             resize_profiles = profiles.Select(p => new
             {
                 id = p.Id,
@@ -78,13 +85,19 @@ public class ConfigController : ControllerBase
     [HttpPost("config")]
     public async Task<IActionResult> SaveConfig([FromBody] ImmichConfiguration config)
     {
-        // Save to database for persistence
-        await SetSettingAsync("Immich:Url", config.immich_url);
-        await SetSettingAsync("Immich:ApiKey", config.api_key);
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(config);
+        if (validationResult != null)
+            return validationResult;
+
+        // Save to database using centralized configuration service
+        await _configurationService.SetImmichSettingsAsync(config.immich_url, config.api_key);
         
         // Configure the service directly for immediate use
         _immichService.Configure(config.immich_url, config.api_key);
-        return Ok(new { success = true });
+        
+        Logger.LogInformation("Configuration saved by user {Username}", GetCurrentUsername());
+        return CreateSuccessResponse(new { success = true });
     }
 
     /// <summary>
@@ -98,8 +111,23 @@ public class ConfigController : ControllerBase
     [HttpPost("config/test")]
     public async Task<IActionResult> TestConnection([FromBody] ImmichConfiguration config)
     {
-        Console.WriteLine($"Received URL: '{config.immich_url}', API Key length: {config.api_key.Length}");
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(config);
+        if (validationResult != null)
+            return validationResult;
+
+        Logger.LogInformation("Connection test initiated by user {Username}", GetCurrentUsername());
         var (success, message) = await _immichService.ValidateConnectionAsync(config.immich_url, config.api_key);
+        
+        if (success)
+        {
+            Logger.LogInformation("Connection test successful for user {Username}", GetCurrentUsername());
+        }
+        else
+        {
+            Logger.LogWarning("Connection test failed for user {Username}: {Message}", GetCurrentUsername(), message);
+        }
+        
         return Ok(new { success, message });
     }
 
@@ -114,6 +142,11 @@ public class ConfigController : ControllerBase
     [HttpPost("profiles")]
     public async Task<IActionResult> CreateProfile([FromBody] ResizeProfileRequest request)
     {
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(request);
+        if (validationResult != null)
+            return validationResult;
+
         var profile = new ResizeProfile
         {
             Name = request.Name,
@@ -123,10 +156,15 @@ public class ConfigController : ControllerBase
             IncludeVertical = request.IncludeVertical
         };
 
-        _context.ResizeProfiles.Add(profile);
-        await _context.SaveChangesAsync();
+        var profileId = await _databaseService.ExecuteInTransactionAsync(async context =>
+        {
+            context.ResizeProfiles.Add(profile);
+            await context.SaveChangesAsync();
+            return profile.Id;
+        });
 
-        return Ok(new { success = true, id = profile.Id });
+        Logger.LogInformation("Profile '{ProfileName}' created by user {Username}", request.Name, GetCurrentUsername());
+        return CreateSuccessResponse(new { success = true, id = profileId });
     }
 
     /// <summary>
@@ -142,18 +180,42 @@ public class ConfigController : ControllerBase
     [HttpPut("profiles/{profileId}")]
     public async Task<IActionResult> UpdateProfile(int profileId, [FromBody] ResizeProfileRequest request)
     {
-        var profile = await _context.ResizeProfiles.FindAsync(profileId);
-        if (profile == null)
-            return NotFound(new { detail = "Profile not found" });
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(request);
+        if (validationResult != null)
+            return validationResult;
 
-        profile.Name = request.Name;
-        profile.Width = request.Width;
-        profile.Height = request.Height;
-        profile.IncludeHorizontal = request.IncludeHorizontal;
-        profile.IncludeVertical = request.IncludeVertical;
+        // Validate profile ID
+        if (profileId <= 0)
+        {
+            Logger.LogWarning("Invalid profile ID {ProfileId} provided by user {Username}", profileId, GetCurrentUsername());
+            return BadRequest(new { detail = "Invalid profile ID" });
+        }
 
-        await _context.SaveChangesAsync();
-        return Ok(new { success = true });
+        var updated = await _databaseService.ExecuteInTransactionAsync(async context =>
+        {
+            var profile = await context.ResizeProfiles.FindAsync(profileId);
+            if (profile == null)
+                return false;
+
+            profile.Name = request.Name;
+            profile.Width = request.Width;
+            profile.Height = request.Height;
+            profile.IncludeHorizontal = request.IncludeHorizontal;
+            profile.IncludeVertical = request.IncludeVertical;
+
+            await context.SaveChangesAsync();
+            return true;
+        });
+
+        if (!updated)
+        {
+            Logger.LogWarning("Profile {ProfileId} not found for user {Username}", profileId, GetCurrentUsername());
+            return CreateErrorResponse(404, "Profile not found");
+        }
+        
+        Logger.LogInformation("Profile {ProfileId} updated by user {Username}", profileId, GetCurrentUsername());
+        return CreateSuccessResponse(new { success = true });
     }
 
     /// <summary>
@@ -167,51 +229,33 @@ public class ConfigController : ControllerBase
     [HttpDelete("profiles/{profileId}")]
     public async Task<IActionResult> DeleteProfile(int profileId)
     {
-        var profile = await _context.ResizeProfiles.FindAsync(profileId);
-        if (profile == null)
-            return NotFound(new { detail = "Profile not found" });
-
-        _context.ResizeProfiles.Remove(profile);
-        await _context.SaveChangesAsync();
-        return Ok(new { success = true });
-    }
-
-    /// <summary>
-    /// Retrieves a configuration setting from the database.
-    /// </summary>
-    /// <param name="key">The setting key to retrieve.</param>
-    /// <returns>The setting value if found, otherwise null.</returns>
-    private async Task<string?> GetSettingAsync(string key)
-    {
-        var setting = await _context.AppSettings.FirstOrDefaultAsync(s => s.Key == key);
-        return setting?.Value;
-    }
-
-    /// <summary>
-    /// Sets a configuration setting in the database, creating it if it doesn't exist.
-    /// </summary>
-    /// <param name="key">The setting key to set.</param>
-    /// <param name="value">The setting value to store.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    private async Task SetSettingAsync(string key, string value)
-    {
-        var setting = await _context.AppSettings.FirstOrDefaultAsync(s => s.Key == key);
-        if (setting != null)
+        // Validate profile ID
+        if (profileId <= 0)
         {
-            setting.Value = value;
-            setting.UpdatedAt = DateTime.UtcNow;
+            Logger.LogWarning("Invalid profile ID {ProfileId} provided by user {Username}", profileId, GetCurrentUsername());
+            return BadRequest(new { detail = "Invalid profile ID" });
         }
-        else
+
+        var deleted = await _databaseService.ExecuteInTransactionAsync(async context =>
         {
-            _context.AppSettings.Add(new AppSetting
-            {
-                Key = key,
-                Value = value,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            });
+            var profile = await context.ResizeProfiles.FindAsync(profileId);
+            if (profile == null)
+                return false;
+
+            context.ResizeProfiles.Remove(profile);
+            await context.SaveChangesAsync();
+            return true;
+        });
+
+        if (!deleted)
+        {
+            Logger.LogWarning("Profile {ProfileId} not found for deletion by user {Username}", profileId, GetCurrentUsername());
+            return CreateErrorResponse(404, "Profile not found");
         }
-        await _context.SaveChangesAsync();
+        
+        Logger.LogInformation("Profile {ProfileId} deleted by user {Username}", profileId, GetCurrentUsername());
+        return CreateSuccessResponse(new { success = true });
     }
+
 }
 

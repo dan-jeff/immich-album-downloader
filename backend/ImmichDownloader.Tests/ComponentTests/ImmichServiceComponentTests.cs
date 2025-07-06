@@ -29,7 +29,10 @@ public class ImmichServiceComponentTests : IDisposable
         var httpClientFactory = new Mock<IHttpClientFactory>();
         httpClientFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(_httpClient);
         
-        _immichService = new ImmichService(httpClientFactory.Object, _loggerMock.Object);
+        var loggerFactory = new Mock<ILoggerFactory>();
+        loggerFactory.Setup(f => f.CreateLogger(It.IsAny<string>())).Returns(_loggerMock.Object);
+        
+        _immichService = new ImmichService(httpClientFactory.Object, _loggerMock.Object, loggerFactory.Object);
     }
 
     #region Configuration Tests
@@ -99,7 +102,7 @@ public class ImmichServiceComponentTests : IDisposable
         var result = await _immichService.ValidateConnectionAsync(_mockServer.BaseUrl, "test-api-key");
 
         // Assert
-        result.Should().BeTrue();
+        result.Success.Should().BeTrue();
     }
 
     [Fact]
@@ -112,7 +115,7 @@ public class ImmichServiceComponentTests : IDisposable
         var result = await _immichService.ValidateConnectionAsync(_mockServer.BaseUrl, "invalid-api-key");
 
         // Assert
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -125,7 +128,7 @@ public class ImmichServiceComponentTests : IDisposable
         var result = await _immichService.ValidateConnectionAsync(_mockServer.BaseUrl, "test-api-key");
 
         // Assert
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     [Fact]
@@ -139,7 +142,7 @@ public class ImmichServiceComponentTests : IDisposable
         var result = await _immichService.ValidateConnectionAsync(_mockServer.BaseUrl, "test-api-key");
 
         // Assert
-        result.Should().BeFalse();
+        result.Success.Should().BeFalse();
     }
 
     #endregion
@@ -211,11 +214,11 @@ public class ImmichServiceComponentTests : IDisposable
         var result = await _immichService.GetAlbumInfoAsync("album-001");
 
         // Assert
-        result.Should().NotBeNull();
-        result.Id.Should().Be("album-001");
-        result.AlbumName.Should().Be("Test Album 1");
-        result.Assets.Should().NotBeNullOrEmpty();
-        result.Assets.Should().HaveCount(2); // Mock returns 2 sample assets
+        result.Success.Should().BeTrue();
+        result.Album.Should().NotBeNull();
+        result.Album!.AlbumName.Should().Be("Test Album 1");
+        result.Album.Assets.Should().NotBeNullOrEmpty();
+        result.Album.Assets.Should().HaveCount(2); // Mock returns 2 sample assets
     }
 
     [Fact]
@@ -262,14 +265,9 @@ public class ImmichServiceComponentTests : IDisposable
         var result = await _immichService.DownloadAssetAsync("asset-001");
 
         // Assert
-        result.Should().NotBeNull();
-        result.CanRead.Should().BeTrue();
-        result.Length.Should().BeGreaterThan(0);
-        
-        // Verify it's actual data
-        var buffer = new byte[1024];
-        var bytesRead = await result.ReadAsync(buffer, 0, buffer.Length);
-        bytesRead.Should().BeGreaterThan(0);
+        result.Success.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+        result.Data!.Length.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -294,13 +292,9 @@ public class ImmichServiceComponentTests : IDisposable
         var result = await _immichService.DownloadAssetAsync("asset-001");
 
         // Assert
-        result.Should().NotBeNull();
-        result.CanRead.Should().BeTrue();
-        
-        // Should be able to read the entire stream
-        using var memoryStream = new MemoryStream();
-        await result.CopyToAsync(memoryStream);
-        memoryStream.Length.Should().BeGreaterThan(1000); // Mock returns 50KB
+        result.Success.Should().BeTrue();
+        result.Data.Should().NotBeNull();
+        result.Data!.Length.Should().BeGreaterThan(1000); // Mock returns 50KB
     }
 
     #endregion

@@ -7,12 +7,11 @@ using ImmichDownloader.Web.Models.Responses;
 namespace ImmichDownloader.Web.Controllers;
 
 /// <summary>
-/// Controller responsible for authentication operations including user registration,
-/// login, and initial setup verification.
+/// Controller responsible for secure authentication operations including user registration,
+/// login, and initial setup verification. Implements comprehensive input validation and security logging.
 /// </summary>
-[ApiController]
 [Route("api/auth")]
-public class AuthController : ControllerBase
+public class AuthController : SecureControllerBase
 {
     private readonly IAuthService _authService;
 
@@ -20,7 +19,8 @@ public class AuthController : ControllerBase
     /// Initializes a new instance of the <see cref="AuthController"/> class.
     /// </summary>
     /// <param name="authService">The authentication service for handling user operations.</param>
-    public AuthController(IAuthService authService)
+    /// <param name="logger">The logger for security monitoring.</param>
+    public AuthController(IAuthService authService, ILogger<AuthController> logger) : base(logger)
     {
         _authService = authService;
     }
@@ -47,17 +47,32 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(request);
+        if (validationResult != null)
+            return validationResult;
+
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
         if (await _authService.UserExistsAsync())
+        {
+            Logger.LogWarning("Registration attempt when user already exists from IP: {IpAddress}", 
+                Request.HttpContext.Connection.RemoteIpAddress);
             return BadRequest(new { detail = "User already exists" });
+        }
 
         var success = await _authService.CreateUserAsync(request.Username, request.Password);
         if (!success)
+        {
+            Logger.LogWarning("Failed to create user {Username} from IP: {IpAddress}", 
+                request.Username, Request.HttpContext.Connection.RemoteIpAddress);
             return BadRequest(new { detail = "Failed to create user" });
+        }
 
-        return Ok(new { message = "User created successfully" });
+        Logger.LogInformation("User {Username} registered successfully from IP: {IpAddress}", 
+            request.Username, Request.HttpContext.Connection.RemoteIpAddress);
+        return CreateSuccessResponse(null, "User created successfully");
     }
 
     /// <summary>
@@ -71,13 +86,24 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(request);
+        if (validationResult != null)
+            return validationResult;
+
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
         var token = await _authService.AuthenticateAsync(request.Username, request.Password);
         if (token == null)
+        {
+            Logger.LogWarning("Failed login attempt for username {Username} from IP: {IpAddress}", 
+                request.Username, Request.HttpContext.Connection.RemoteIpAddress);
             return Unauthorized(new { detail = "Incorrect username or password" });
+        }
 
+        Logger.LogInformation("Successful login for user {Username} from IP: {IpAddress}", 
+            request.Username, Request.HttpContext.Connection.RemoteIpAddress);
         return Ok(new TokenResponse { access_token = token });
     }
 }

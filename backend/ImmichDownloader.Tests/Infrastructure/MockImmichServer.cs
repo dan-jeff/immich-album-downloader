@@ -36,6 +36,17 @@ public class MockImmichServer : IDisposable
     /// </summary>
     private void SetupDefaultMappings()
     {
+        // GET /api/server/ping - Server ping endpoint for validation
+        _server
+            .Given(Request.Create()
+                .WithPath("/api/server/ping")
+                .WithHeader("x-api-key", "*")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(HttpStatusCode.OK)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody("{\"res\":\"pong\"}"));
+
         // GET /api/albums - Returns list of albums
         _server
             .Given(Request.Create()
@@ -47,16 +58,39 @@ public class MockImmichServer : IDisposable
                 .WithHeader("Content-Type", "application/json")
                 .WithBody(GetDefaultAlbumsResponse()));
 
-        // GET /api/albums/{id} - Returns specific album info with assets
+        // GET /api/albums/album-001 - Returns Test Album 1
         _server
             .Given(Request.Create()
-                .WithPath("/api/albums/*")
+                .WithPath("/api/albums/album-001")
                 .WithHeader("x-api-key", "*")
                 .UsingGet())
             .RespondWith(Response.Create()
                 .WithStatusCode(HttpStatusCode.OK)
                 .WithHeader("Content-Type", "application/json")
-                .WithBody(GetAlbumInfoResponse("{{request.path.0}}")));
+                .WithBody(GetAlbumInfoResponse("album-001")));
+
+        // GET /api/albums/album-002 - Returns Test Album 2
+        _server
+            .Given(Request.Create()
+                .WithPath("/api/albums/album-002")
+                .WithHeader("x-api-key", "*")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(HttpStatusCode.OK)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(GetAlbumInfoResponse("album-002")));
+
+        // GET /api/albums/* - Returns Empty Album for any other ID
+        _server
+            .Given(Request.Create()
+                .WithPath("/api/albums/*")
+                .WithHeader("x-api-key", "*")
+                .UsingGet())
+            .AtPriority(10) // Lower priority than specific mappings
+            .RespondWith(Response.Create()
+                .WithStatusCode(HttpStatusCode.OK)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(GetAlbumInfoResponse("unknown")));
 
         // GET /api/assets/{id}/thumbnail - Returns thumbnail data
         _server

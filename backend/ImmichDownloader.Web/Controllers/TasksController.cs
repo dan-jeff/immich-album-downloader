@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using ImmichDownloader.Web.Data;
 using ImmichDownloader.Web.Models;
 using ImmichDownloader.Web.Models.Requests;
 using ImmichDownloader.Web.Services;
+using ImmichDownloader.Web.Services.Database;
 using System.IO.Compression;
 
 namespace ImmichDownloader.Web.Controllers;
@@ -16,26 +16,32 @@ namespace ImmichDownloader.Web.Controllers;
 [ApiController]
 [Route("api")]
 [Authorize]
-public class TasksController : ControllerBase
+public class TasksController : SecureControllerBase
 {
-    private readonly ApplicationDbContext _context;
-    private readonly IBackgroundTaskQueue _taskQueue;
-    private readonly ILogger<TasksController> _logger;
+    private readonly ITaskRepository _taskRepository;
+    private readonly IDatabaseService _databaseService;
+    private readonly TaskExecutor _taskExecutor;
+    private readonly ISecureFileService _secureFileService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TasksController"/> class.
     /// </summary>
-    /// <param name="context">The database context for task operations.</param>
-    /// <param name="taskQueue">The background task queue for queueing work.</param>
+    /// <param name="taskRepository">The centralized task repository for task operations.</param>
+    /// <param name="databaseService">The centralized database service for complex operations.</param>
+    /// <param name="taskExecutor">The simplified task executor for task management.</param>
+    /// <param name="secureFileService">The secure file service for safe file operations.</param>
     /// <param name="logger">Logger instance for logging operations and errors.</param>
     public TasksController(
-        ApplicationDbContext context,
-        IBackgroundTaskQueue taskQueue,
-        ILogger<TasksController> logger)
+        ITaskRepository taskRepository,
+        IDatabaseService databaseService,
+        TaskExecutor taskExecutor,
+        ISecureFileService secureFileService,
+        ILogger<TasksController> logger) : base(logger)
     {
-        _context = context;
-        _taskQueue = taskQueue;
-        _logger = logger;
+        _taskRepository = taskRepository;
+        _databaseService = databaseService;
+        _taskExecutor = taskExecutor;
+        _secureFileService = secureFileService;
     }
 
     /// <summary>
@@ -49,6 +55,15 @@ public class TasksController : ControllerBase
     [HttpPost("download")]
     public async Task<IActionResult> StartDownload([FromBody] DownloadRequest request)
     {
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(request);
+        if (validationResult != null)
+            return validationResult;
+
+        // Additional validation for album name
+        if (!ValidateAlbumName(request.AlbumName))
+            return BadRequest(ModelState);
+
         var taskId = Guid.NewGuid().ToString();
 
         // Create task record
@@ -62,17 +77,20 @@ public class TasksController : ControllerBase
             Total = 0
         };
 
-        _context.BackgroundTasks.Add(task);
-        await _context.SaveChangesAsync();
+        await _taskRepository.CreateTaskAsync(task);
 
-        // Queue the download task using streaming service
-        await _taskQueue.QueueBackgroundTaskAsync(async (serviceProvider, cancellationToken) =>
+        // Queue the download task using simplified task executor
+        var queued = await _taskExecutor.QueueDownloadAsync(taskId, request.AlbumId, request.AlbumName);
+        
+        if (!queued)
         {
-            var streamingDownloadService = serviceProvider.GetRequiredService<IStreamingDownloadService>();
-            await streamingDownloadService.StartDownloadAsync(taskId, request.AlbumId, request.AlbumName, cancellationToken);
-        });
+            Logger.LogError("Failed to queue download task {TaskId} - task queue may be full", taskId);
+            return CreateErrorResponse(503, "Task queue is currently full. Please try again later.");
+        }
 
-        return Ok(new { task_id = taskId });
+        Logger.LogInformation("Download task {TaskId} started for album {AlbumName} by user {Username}", 
+            taskId, request.AlbumName, GetCurrentUsername());
+        return CreateSuccessResponse(new { task_id = taskId });
     }
 
     /// <summary>
@@ -86,6 +104,26 @@ public class TasksController : ControllerBase
     [HttpPost("resize")]
     public async Task<IActionResult> StartResize([FromBody] ResizeRequest request)
     {
+        // Validate input using secure validation framework
+        var validationResult = ValidateInput(request);
+        if (validationResult != null)
+            return validationResult;
+
+        // Validate IDs
+        if (request.DownloadedAlbumId <= 0)
+        {
+            Logger.LogWarning("Invalid downloaded album ID {AlbumId} provided by user {Username}", 
+                request.DownloadedAlbumId, GetCurrentUsername());
+            return BadRequest(new { detail = "Invalid downloaded album ID" });
+        }
+
+        if (request.ProfileId <= 0)
+        {
+            Logger.LogWarning("Invalid profile ID {ProfileId} provided by user {Username}", 
+                request.ProfileId, GetCurrentUsername());
+            return BadRequest(new { detail = "Invalid profile ID" });
+        }
+
         var taskId = Guid.NewGuid().ToString();
 
         // Create task record
@@ -99,17 +137,20 @@ public class TasksController : ControllerBase
             Total = 0
         };
 
-        _context.BackgroundTasks.Add(task);
-        await _context.SaveChangesAsync();
+        await _taskRepository.CreateTaskAsync(task);
 
-        // Queue the resize task using streaming service
-        await _taskQueue.QueueBackgroundTaskAsync(async (serviceProvider, cancellationToken) =>
+        // Queue the resize task using simplified task executor
+        var queued = await _taskExecutor.QueueResizeAsync(taskId, request.DownloadedAlbumId, request.ProfileId);
+        
+        if (!queued)
         {
-            var streamingResizeService = serviceProvider.GetRequiredService<IStreamingResizeService>();
-            await streamingResizeService.StartResizeAsync(taskId, request.DownloadedAlbumId, request.ProfileId, cancellationToken);
-        });
+            Logger.LogError("Failed to queue resize task {TaskId} - task queue may be full", taskId);
+            return CreateErrorResponse(503, "Task queue is currently full. Please try again later.");
+        }
 
-        return Ok(new { task_id = taskId });
+        Logger.LogInformation("Resize task {TaskId} started for album {AlbumId} with profile {ProfileId} by user {Username}", 
+            taskId, request.DownloadedAlbumId, request.ProfileId, GetCurrentUsername());
+        return CreateSuccessResponse(new { task_id = taskId });
     }
 
     /// <summary>
@@ -121,10 +162,14 @@ public class TasksController : ControllerBase
     [HttpGet("tasks")]
     public async Task<IActionResult> GetActiveTasks()
     {
-        var tasks = await _context.BackgroundTasks
-            .OrderByDescending(t => t.CreatedAt)
-            .Take(50)
-            .ToListAsync();
+        var tasks = await _databaseService.ExecuteWithScopeAsync(async context =>
+        {
+            return await context.BackgroundTasks
+                .AsNoTracking()
+                .OrderByDescending(t => t.CreatedAt)
+                .Take(50)
+                .ToListAsync();
+        });
 
         var result = tasks.Select(t => new
         {
@@ -157,30 +202,34 @@ public class TasksController : ControllerBase
     [HttpGet("downloads")]
     public async Task<IActionResult> GetCompletedDownloads()
     {
-        var downloads = await _context.BackgroundTasks
-            .Where(t => t.TaskType == TaskType.Resize && 
-                       t.Status == Models.TaskStatus.Completed && 
-                       t.ZipData != null)
-            .Join(_context.DownloadedAlbums,
-                  t => t.DownloadedAlbumId,
-                  d => d.Id,
-                  (t, d) => new { Task = t, Album = d })
-            .Join(_context.ResizeProfiles,
-                  td => td.Task.ProfileId,
-                  p => p.Id,
-                  (td, p) => new
-                  {
-                      id = td.Task.Id,
-                      album_name = td.Album.AlbumName,
-                      profile_name = p.Name,
-                      processed_count = td.Task.ProcessedCount,
-                      total_size = td.Task.ZipSize,
-                      zip_size = td.Task.ZipSize,
-                      created_at = td.Task.CreatedAt,
-                      status = "completed"
-                  })
-            .OrderByDescending(d => d.created_at)
-            .ToListAsync();
+        var downloads = await _databaseService.ExecuteWithScopeAsync(async context =>
+        {
+            return await context.BackgroundTasks
+                .AsNoTracking()
+                .Where(t => t.TaskType == TaskType.Resize && 
+                           t.Status == Models.TaskStatus.Completed && 
+                           t.ZipData != null)
+                .Join(context.DownloadedAlbums,
+                      t => t.DownloadedAlbumId,
+                      d => d.Id,
+                      (t, d) => new { Task = t, Album = d })
+                .Join(context.ResizeProfiles,
+                      td => td.Task.ProfileId,
+                      p => p.Id,
+                      (td, p) => new
+                      {
+                          id = td.Task.Id,
+                          album_name = td.Album.AlbumName,
+                          profile_name = p.Name,
+                          processed_count = td.Task.ProcessedCount,
+                          total_size = td.Task.ZipSize,
+                          zip_size = td.Task.ZipSize,
+                          created_at = td.Task.CreatedAt,
+                          status = "completed"
+                      })
+                .OrderByDescending(d => d.created_at)
+                .ToListAsync();
+        });
 
         return Ok(downloads);
     }
@@ -197,29 +246,61 @@ public class TasksController : ControllerBase
     [HttpGet("downloads/{taskId}")]
     public async Task<IActionResult> DownloadZip(string taskId)
     {
-        var task = await _context.BackgroundTasks
-            .FirstOrDefaultAsync(t => t.Id == taskId && t.Status == Models.TaskStatus.Completed);
+        // Validate task ID
+        if (!ValidateTaskId(taskId))
+            return BadRequest(ModelState);
+
+        var task = await _databaseService.ExecuteWithScopeAsync(async context =>
+        {
+            return await context.BackgroundTasks
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == taskId && t.Status == Models.TaskStatus.Completed);
+        });
 
         if (task == null)
-            return NotFound(new { detail = "Download not found" });
+        {
+            Logger.LogWarning("Download not found for task {TaskId} by user {Username}", taskId, GetCurrentUsername());
+            return CreateErrorResponse(404, "Download not found");
+        }
 
         // Support both streaming (FilePath) and legacy (ZipData) modes
-        if (!string.IsNullOrEmpty(task.FilePath) && System.IO.File.Exists(task.FilePath))
+        if (!string.IsNullOrEmpty(task.FilePath))
         {
-            // Streaming mode - return file stream
-            var fileStream = new FileStream(task.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var fileName = task.TaskType == TaskType.Download ? $"download_{taskId}.zip" : $"resized_{taskId}.zip";
+            // Use secure file service to validate and access the file
+            var downloadDir = _secureFileService.GetDownloadDirectory();
             
-            return File(fileStream, "application/zip", fileName, enableRangeProcessing: true);
+            if (_secureFileService.FileExists(task.FilePath, downloadDir))
+            {
+                try
+                {
+                    // Streaming mode - return secure file stream
+                    var fileStream = _secureFileService.OpenFileStream(task.FilePath, downloadDir, 
+                        FileMode.Open, FileAccess.Read, FileShare.Read);
+                    var fileName = task.TaskType == TaskType.Download ? $"download_{taskId}.zip" : $"resized_{taskId}.zip";
+                    
+                    Logger.LogInformation("Serving secure download file {FileName} for task {TaskId} to user {Username}", 
+                        fileName, taskId, GetCurrentUsername());
+                    return File(fileStream, "application/zip", fileName, enableRangeProcessing: true);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    Logger.LogWarning("Unauthorized file access attempt for task {TaskId} by user {Username}: {Error}", 
+                        taskId, GetCurrentUsername(), ex.Message);
+                    return CreateErrorResponse(403, "File access denied");
+                }
+            }
         }
         else if (task.ZipData != null)
         {
             // Legacy mode - return byte array
             var fileName = task.TaskType == TaskType.Download ? $"download_{taskId}.zip" : $"resized_{taskId}.zip";
+            Logger.LogInformation("Serving legacy download {FileName} for task {TaskId} to user {Username}", 
+                fileName, taskId, GetCurrentUsername());
             return File(task.ZipData, "application/zip", fileName);
         }
 
-        return NotFound(new { detail = "Download file not found" });
+        Logger.LogWarning("Download file not found for task {TaskId} by user {Username}", taskId, GetCurrentUsername());
+        return CreateErrorResponse(404, "Download file not found");
     }
 
     /// <summary>
@@ -233,29 +314,57 @@ public class TasksController : ControllerBase
     [HttpDelete("downloads/{taskId}")]
     public async Task<IActionResult> DeleteDownload(string taskId)
     {
-        var task = await _context.BackgroundTasks
-            .FirstOrDefaultAsync(t => t.Id == taskId && t.Status == Models.TaskStatus.Completed);
+        // Validate task ID
+        if (!ValidateTaskId(taskId))
+            return BadRequest(ModelState);
+
+        var task = await _databaseService.ExecuteWithScopeAsync(async context =>
+        {
+            return await context.BackgroundTasks
+                .FirstOrDefaultAsync(t => t.Id == taskId && t.Status == Models.TaskStatus.Completed);
+        });
 
         if (task == null)
-            return NotFound(new { detail = "Download not found" });
+        {
+            Logger.LogWarning("Download not found for deletion: task {TaskId} by user {Username}", taskId, GetCurrentUsername());
+            return CreateErrorResponse(404, "Download not found");
+        }
 
-        // Delete file if it exists (streaming mode)
-        if (!string.IsNullOrEmpty(task.FilePath) && System.IO.File.Exists(task.FilePath))
+        // Delete file if it exists (streaming mode) using secure file service
+        if (!string.IsNullOrEmpty(task.FilePath))
         {
             try
             {
-                System.IO.File.Delete(task.FilePath);
+                var downloadDir = _secureFileService.GetDownloadDirectory();
+                var deleted = _secureFileService.DeleteFile(task.FilePath, downloadDir);
+                
+                if (deleted)
+                {
+                    Logger.LogInformation("Securely deleted file {FilePath} for task {TaskId} by user {Username}", 
+                        task.FilePath, taskId, GetCurrentUsername());
+                }
+                else
+                {
+                    Logger.LogWarning("File {FilePath} not found for deletion for task {TaskId} by user {Username}", 
+                        task.FilePath, taskId, GetCurrentUsername());
+                }
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Logger.LogWarning("Unauthorized file deletion attempt for task {TaskId} by user {Username}: {Error}", 
+                    taskId, GetCurrentUsername(), ex.Message);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting file {FilePath} for task {TaskId}", task.FilePath, taskId);
+                Logger.LogError(ex, "Error securely deleting file {FilePath} for task {TaskId} by user {Username}", 
+                    task.FilePath, taskId, GetCurrentUsername());
             }
         }
 
-        _context.BackgroundTasks.Remove(task);
-        await _context.SaveChangesAsync();
+        await _taskRepository.DeleteTaskAsync(taskId);
 
-        return Ok(new { success = true });
+        Logger.LogInformation("Download task {TaskId} deleted by user {Username}", taskId, GetCurrentUsername());
+        return CreateSuccessResponse(new { success = true });
     }
 
     /// <summary>
@@ -271,26 +380,45 @@ public class TasksController : ControllerBase
     [HttpDelete("tasks/{taskId}")]
     public async Task<IActionResult> DeleteTask(string taskId)
     {
-        var task = await _context.BackgroundTasks
-            .FirstOrDefaultAsync(t => t.Id == taskId);
+        // Validate task ID
+        if (!ValidateTaskId(taskId))
+            return BadRequest(ModelState);
+
+        var task = await _taskRepository.GetTaskAsync(taskId);
 
         if (task == null)
-            return NotFound(new { detail = "Task not found" });
+        {
+            Logger.LogWarning("Task not found for deletion: {TaskId} by user {Username}", taskId, GetCurrentUsername());
+            return CreateErrorResponse(404, "Task not found");
+        }
 
         // Don't allow deletion of running tasks
         if (task.Status == Models.TaskStatus.InProgress)
-            return BadRequest(new { detail = "Cannot delete running task" });
+        {
+            Logger.LogWarning("Attempt to delete running task {TaskId} by user {Username}", taskId, GetCurrentUsername());
+            return CreateErrorResponse(400, "Cannot delete running task");
+        }
 
         try
         {
-            _context.BackgroundTasks.Remove(task);
-            await _context.SaveChangesAsync();
-            return Ok(new { success = true });
+            var deleted = await _taskRepository.DeleteTaskAsync(taskId);
+            
+            if (deleted)
+            {
+                Logger.LogInformation("Task {TaskId} deleted by user {Username}", taskId, GetCurrentUsername());
+                return CreateSuccessResponse(new { success = true });
+            }
+            else
+            {
+                Logger.LogWarning("Task {TaskId} could not be deleted by user {Username}", taskId, GetCurrentUsername());
+                return CreateErrorResponse(500, "Failed to delete task");
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete task {TaskId}: {Error}", taskId, ex.Message);
-            return StatusCode(500, new { detail = "Failed to delete task", error = ex.Message });
+            Logger.LogError(ex, "Failed to delete task {TaskId} by user {Username}: {Error}", 
+                taskId, GetCurrentUsername(), ex.Message);
+            return CreateErrorResponse(500, "Failed to delete task", new { error = ex.Message });
         }
     }
 }
