@@ -118,7 +118,8 @@ class API {
       Width: profile.width,
       Height: profile.height,
       IncludeHorizontal: profile.include_horizontal,
-      IncludeVertical: profile.include_vertical
+      IncludeVertical: profile.include_vertical,
+      Quality: profile.quality || 85
     };
     const response = await this.client.post('/profiles', profileData);
     return response.data;
@@ -130,7 +131,8 @@ class API {
       Width: profile.width,
       Height: profile.height,
       IncludeHorizontal: profile.include_horizontal,
-      IncludeVertical: profile.include_vertical
+      IncludeVertical: profile.include_vertical,
+      Quality: profile.quality || 85
     };
     const response = await this.client.put(`/profiles/${profileId}`, profileData);
     return response.data;
