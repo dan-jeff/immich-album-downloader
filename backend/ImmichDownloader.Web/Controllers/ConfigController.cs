@@ -69,6 +69,7 @@ public class ConfigController : SecureControllerBase
                 height = p.Height,
                 include_horizontal = p.IncludeHorizontal,
                 include_vertical = p.IncludeVertical,
+                quality = p.Quality,
                 created_at = p.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
             })
         });
@@ -153,7 +154,8 @@ public class ConfigController : SecureControllerBase
             Width = request.Width,
             Height = request.Height,
             IncludeHorizontal = request.IncludeHorizontal,
-            IncludeVertical = request.IncludeVertical
+            IncludeVertical = request.IncludeVertical,
+            Quality = request.Quality
         };
 
         var profileId = await _databaseService.ExecuteInTransactionAsync(async context =>
@@ -203,6 +205,7 @@ public class ConfigController : SecureControllerBase
             profile.Height = request.Height;
             profile.IncludeHorizontal = request.IncludeHorizontal;
             profile.IncludeVertical = request.IncludeVertical;
+            profile.Quality = request.Quality;
 
             await context.SaveChangesAsync();
             return true;
