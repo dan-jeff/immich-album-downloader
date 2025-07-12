@@ -52,7 +52,7 @@ public class ImageProcessingService : IImageProcessingService
             }
             
             // Try to load the image with ImageSharp
-            using var image = Image.Load(imageData);
+            using var image = SixLabors.ImageSharp.Image.Load(imageData);
             
             // Apply EXIF orientation correction
             image.Mutate(ctx => ctx.AutoOrient());

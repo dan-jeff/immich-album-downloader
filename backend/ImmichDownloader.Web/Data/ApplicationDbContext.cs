@@ -65,6 +65,36 @@ public class ApplicationDbContext : DbContext
     /// Represents the app_settings table containing application configuration key-value pairs.
     /// </summary>
     public DbSet<AppSetting> AppSettings { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the DbSet for Image entities.
+    /// Represents the images table containing individual image metadata with Immich IDs.
+    /// </summary>
+    public DbSet<Image> Images { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the DbSet for Album entities.
+    /// Represents the albums table containing enhanced album information from Immich.
+    /// </summary>
+    public DbSet<Album> Albums { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the DbSet for ImageAlbum entities.
+    /// Represents the image_albums table providing many-to-many relationships between images and albums.
+    /// </summary>
+    public DbSet<ImageAlbum> ImageAlbums { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the DbSet for ResizeJob entities.
+    /// Represents the resize_jobs table containing resize operation tracking and configuration.
+    /// </summary>
+    public DbSet<ResizeJob> ResizeJobs { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the DbSet for ResizedImage entities.
+    /// Represents the resized_images table containing metadata for processed resize operations.
+    /// </summary>
+    public DbSet<ResizedImage> ResizedImages { get; set; }
 
     /// <summary>
     /// Configures the model relationships, constraints, and database mappings.
@@ -84,6 +114,13 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<AlbumChunk>().ToTable("album_chunks");
         modelBuilder.Entity<BackgroundTask>().ToTable("background_tasks");
         modelBuilder.Entity<AppSetting>().ToTable("app_settings");
+        
+        // Configure new entity table names
+        modelBuilder.Entity<Image>().ToTable("images");
+        modelBuilder.Entity<Album>().ToTable("albums");
+        modelBuilder.Entity<ImageAlbum>().ToTable("image_albums");
+        modelBuilder.Entity<ResizeJob>().ToTable("resize_jobs");
+        modelBuilder.Entity<ResizedImage>().ToTable("resized_images");
 
         // Configure User entity with snake_case column names and constraints
         modelBuilder.Entity<User>(entity =>
@@ -218,6 +255,131 @@ public class ApplicationDbContext : DbContext
             
             // Unique constraint on key to ensure one value per configuration setting
             entity.HasIndex(e => e.Key).IsUnique();
+        });
+
+        // Configure Image entity with proper indexes and constraints
+        modelBuilder.Entity<Image>(entity =>
+        {
+            // Unique index on immich_id to prevent duplicate images from Immich
+            entity.HasIndex(e => e.ImmichId).IsUnique();
+            
+            // Index on is_downloaded for filtering downloaded vs pending images
+            entity.HasIndex(e => e.IsDownloaded);
+            
+            // Composite index for download status and file type queries
+            entity.HasIndex(e => new { e.IsDownloaded, e.FileType });
+            
+            // Index on original filename for search functionality
+            entity.HasIndex(e => e.OriginalFilename);
+        });
+
+        // Configure Album entity with performance indexes
+        modelBuilder.Entity<Album>(entity =>
+        {
+            // Unique index on immich_id to prevent duplicate albums from Immich
+            entity.HasIndex(e => e.ImmichId).IsUnique();
+            
+            // Index on name for search and filtering
+            entity.HasIndex(e => e.Name);
+            
+            // Index on sync_status for filtering sync operations
+            entity.HasIndex(e => e.SyncStatus);
+            
+            // Index on is_active for filtering active albums
+            entity.HasIndex(e => e.IsActive);
+            
+            // Composite index for active albums with sync status
+            entity.HasIndex(e => new { e.IsActive, e.SyncStatus });
+        });
+
+        // Configure ImageAlbum junction table with proper relationships and constraints
+        modelBuilder.Entity<ImageAlbum>(entity =>
+        {
+            // Configure foreign key relationships
+            entity.HasOne(e => e.Image)
+                  .WithMany(i => i.ImageAlbums)
+                  .HasForeignKey(e => e.ImageId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            
+            entity.HasOne(e => e.Album)
+                  .WithMany(a => a.ImageAlbums)
+                  .HasForeignKey(e => e.AlbumId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            
+            // Unique constraint to prevent duplicate image-album relationships
+            entity.HasIndex(e => new { e.ImageId, e.AlbumId }).IsUnique();
+            
+            // Index on album_id for querying images in an album
+            entity.HasIndex(e => e.AlbumId);
+            
+            // Index on is_active for filtering active relationships
+            entity.HasIndex(e => e.IsActive);
+            
+            // Composite index for active relationships in albums
+            entity.HasIndex(e => new { e.AlbumId, e.IsActive });
+        });
+
+        // Configure ResizeJob entity with relationships and performance indexes
+        modelBuilder.Entity<ResizeJob>(entity =>
+        {
+            // Configure foreign key relationships
+            entity.HasOne(e => e.Album)
+                  .WithMany(a => a.ResizeJobs)
+                  .HasForeignKey(e => e.AlbumId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            
+            entity.HasOne(e => e.ResizeProfile)
+                  .WithMany()
+                  .HasForeignKey(e => e.ResizeProfileId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            
+            // Unique index on job_id for external references
+            entity.HasIndex(e => e.JobId).IsUnique();
+            
+            // Index on status for filtering jobs by status
+            entity.HasIndex(e => e.Status);
+            
+            // Index on album_id for album-specific resize jobs
+            entity.HasIndex(e => e.AlbumId);
+            
+            // Index on resize_profile_id for profile-specific queries
+            entity.HasIndex(e => e.ResizeProfileId);
+            
+            // Composite index for album and profile combinations
+            entity.HasIndex(e => new { e.AlbumId, e.ResizeProfileId });
+            
+            // Index on created_at for sorting and time-based queries
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        // Configure ResizedImage entity with relationships and indexes
+        modelBuilder.Entity<ResizedImage>(entity =>
+        {
+            // Configure foreign key relationships
+            entity.HasOne(e => e.Image)
+                  .WithMany(i => i.ResizedImages)
+                  .HasForeignKey(e => e.ImageId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            
+            entity.HasOne(e => e.ResizeJob)
+                  .WithMany(j => j.ResizedImages)
+                  .HasForeignKey(e => e.ResizeJobId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            
+            // Unique constraint to prevent duplicate resized images for same job
+            entity.HasIndex(e => new { e.ImageId, e.ResizeJobId }).IsUnique();
+            
+            // Index on resize_job_id for job-specific queries
+            entity.HasIndex(e => e.ResizeJobId);
+            
+            // Index on status for filtering by processing status
+            entity.HasIndex(e => e.Status);
+            
+            // Index on format for filtering by output format
+            entity.HasIndex(e => e.Format);
+            
+            // Composite index for completed resized images
+            entity.HasIndex(e => new { e.Status, e.Format });
         });
     }
 }
