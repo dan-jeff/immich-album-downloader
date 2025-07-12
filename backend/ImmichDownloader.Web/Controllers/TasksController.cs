@@ -195,6 +195,7 @@ public class TasksController : SecureControllerBase
 
     /// <summary>
     /// Retrieves all completed resize tasks that have downloadable ZIP files.
+    /// Validates that the files actually exist on disk before returning them.
     /// </summary>
     /// <returns>A list of completed downloads with metadata.</returns>
     /// <response code="200">Returns the list of completed downloads.</response>
@@ -204,11 +205,10 @@ public class TasksController : SecureControllerBase
     {
         var downloads = await _databaseService.ExecuteWithScopeAsync(async context =>
         {
-            return await context.BackgroundTasks
+            var candidates = await context.BackgroundTasks
                 .AsNoTracking()
                 .Where(t => t.TaskType == TaskType.Resize && 
-                           t.Status == Models.TaskStatus.Completed && 
-                           (t.ZipData != null || !string.IsNullOrEmpty(t.FilePath)))
+                           t.Status == Models.TaskStatus.Completed)
                 .Join(context.DownloadedAlbums,
                       t => t.DownloadedAlbumId,
                       d => d.Id,
@@ -218,7 +218,7 @@ public class TasksController : SecureControllerBase
                       p => p.Id,
                       (td, p) => new
                       {
-                          id = td.Task.Id,
+                          task = td.Task,
                           album_name = td.Album.AlbumName,
                           profile_name = p.Name,
                           processed_count = td.Task.ProcessedCount,
@@ -229,6 +229,64 @@ public class TasksController : SecureControllerBase
                       })
                 .OrderByDescending(d => d.created_at)
                 .ToListAsync();
+
+            // Filter candidates by actual file existence
+            var validDownloads = new List<object>();
+            
+            foreach (var candidate in candidates)
+            {
+                bool hasValidFile = false;
+                
+                // Check legacy ZipData first
+                if (candidate.task.ZipData != null && candidate.task.ZipData.Length > 0)
+                {
+                    hasValidFile = true;
+                }
+                // Check streaming FilePath
+                else if (!string.IsNullOrEmpty(candidate.task.FilePath))
+                {
+                    try
+                    {
+                        // For resize tasks, use the resized directory
+                        var baseDir = Path.Combine(Path.GetDirectoryName(_secureFileService.GetDownloadDirectory())!, "resized");
+                        var fileName = Path.GetFileName(candidate.task.FilePath);
+                        
+                        // Validate file exists using secure file service
+                        hasValidFile = _secureFileService.FileExists(fileName, baseDir);
+                        
+                        Logger.LogDebug("File existence check for resize task {TaskId}: FilePath='{FilePath}', FileName='{FileName}', BaseDir='{BaseDir}', Exists={Exists}",
+                            candidate.task.Id, candidate.task.FilePath, fileName, baseDir, hasValidFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Error checking file existence for resize task {TaskId} with FilePath '{FilePath}'", 
+                            candidate.task.Id, candidate.task.FilePath);
+                        hasValidFile = false;
+                    }
+                }
+                
+                if (hasValidFile)
+                {
+                    validDownloads.Add(new
+                    {
+                        id = candidate.task.Id,
+                        album_name = candidate.album_name,
+                        profile_name = candidate.profile_name,
+                        processed_count = candidate.processed_count,
+                        total_size = candidate.total_size,
+                        zip_size = candidate.zip_size,
+                        created_at = candidate.created_at,
+                        status = candidate.status
+                    });
+                }
+                else
+                {
+                    Logger.LogWarning("Resize task {TaskId} marked as completed but no valid download file found (ZipData: {HasZipData}, FilePath: '{FilePath}')",
+                        candidate.task.Id, candidate.task.ZipData != null, candidate.task.FilePath ?? "null");
+                }
+            }
+            
+            return validDownloads;
         });
 
         return Ok(downloads);
