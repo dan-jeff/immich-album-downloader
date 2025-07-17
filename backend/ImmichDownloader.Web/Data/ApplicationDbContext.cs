@@ -207,7 +207,8 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(e => e.DownloadedAlbum)
                   .WithMany()
                   .HasForeignKey(e => e.DownloadedAlbumId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .IsRequired(false);
             
             // Unique constraint for asset_id + album_id to prevent duplicate downloads
             entity.HasIndex(e => new { e.AssetId, e.AlbumId }).IsUnique();

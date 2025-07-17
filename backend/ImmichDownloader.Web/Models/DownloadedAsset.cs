@@ -62,6 +62,7 @@ public class DownloadedAsset
     /// <summary>
     /// Gets or sets the foreign key reference to the parent downloaded album.
     /// This creates a relationship between the asset and the album it belongs to.
+    /// Can be null when assets are recorded before the album is fully saved.
     /// </summary>
-    public int DownloadedAlbumId { get; set; }
+    public int? DownloadedAlbumId { get; set; }
 }

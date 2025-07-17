@@ -350,7 +350,7 @@ public class StreamingDownloadService : IStreamingDownloadService
                 {
                     AlbumId = albumId,
                     AssetId = assetId,
-                    DownloadedAlbumId = 0 // Will be updated when album is saved
+                    DownloadedAlbumId = null // Will be updated when album is saved
                 });
                 await context.SaveChangesAsync();
             }

@@ -304,7 +304,7 @@ public class TasksController : SecureControllerBase
     [HttpGet("downloads/{taskId}")]
     public async Task<IActionResult> DownloadZip(string taskId)
     {
-        Logger.LogError("DEBUG: DownloadZip called for task {TaskId} by user {Username}", taskId, GetCurrentUsername());
+        Logger.LogInformation("Download requested for task {TaskId} by user {Username}", taskId, GetCurrentUsername());
         
         // Validate task ID
         if (!ValidateTaskId(taskId))
@@ -327,7 +327,7 @@ public class TasksController : SecureControllerBase
 
         var task = taskWithDetails?.Task;
 
-        Logger.LogError("DEBUG: Task query result for {TaskId}: Found={TaskFound}, TaskType={TaskType}, FilePath='{FilePath}'", 
+        Logger.LogDebug("Task query result for {TaskId}: Found={TaskFound}, TaskType={TaskType}, FilePath='{FilePath}'", 
             taskId, task != null, task?.TaskType, task?.FilePath);
 
         if (task == null)
